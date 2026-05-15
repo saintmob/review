@@ -17,9 +17,6 @@ export default function App() {
   const [interactionPoint, setInteractionPoint] = useState<THREE.Vector3 | null>(null);
   const [mode, setMode] = useState<'idle' | 'interaction' | 'flow' | 'climax'>('idle');
   const [intensity, setIntensity] = useState(0);
-  const [isDisplayMode, setIsDisplayMode] = useState(false);
-  const [isInitializing, setIsInitializing] = useState(false);
-  const [isCopied, setIsCopied] = useState(false);
   const [remotePulse, setRemotePulse] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'error' | 'connecting'>('connecting');
   const intensityRef = useRef(0);
@@ -48,15 +45,6 @@ export default function App() {
   const lastSyncTimeRef = useRef<number>(Date.now());
   const clientId = useRef(Math.random().toString(36).substring(7));
 
-  useEffect(() => {
-    // Check for display mode URL parameter
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('display') === 'true' || params.get('mode') === 'display') {
-      setIsDisplayMode(true);
-    }
-  }, []);
-
-  // Sync state from Firebase
   useEffect(() => {
     checkConnection();
     const unsub = onSnapshot(doc(db, 'global', 'state'), (snapshot) => {
@@ -188,15 +176,18 @@ export default function App() {
   };
 
   const handleSplashPointerDown = async (e: React.PointerEvent) => {
+    // Capture rect synchronously before any await
+    const target = e.currentTarget as HTMLElement;
+    if (!target) return;
+    const rect = target.getBoundingClientRect();
+    const clientX = e.clientX;
+    const clientY = e.clientY;
+
     // Start audio on first interaction if not yet started
     if (!isStarted) {
       await startAudio();
     }
     
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const clientX = e.clientX;
-    const clientY = e.clientY;
-
     await Tone.start();
     const notes = ["C2", "G2", "C3", "E3", "G3", "A3", "C4", "E4"];
     triggerNote(notes[Math.floor(Math.random() * notes.length)]);
@@ -243,25 +234,6 @@ export default function App() {
         setMode('idle');
       }, 500);
     }
-  };
-
-  const handleStart = async () => {
-    setIsInitializing(true);
-    // Initial sync
-    await syncToFirebase({ intensity: 0.2 });
-    await startAudio();
-  };
-
-  const copyLink = (type: 'main' | 'display') => {
-    const url = new URL(window.location.href);
-    if (type === 'display') {
-      url.searchParams.set('mode', 'display');
-    } else {
-      url.searchParams.delete('mode');
-    }
-    navigator.clipboard.writeText(url.toString());
-    setIsCopied(true);
-    setTimeout(() => setIsCopied(false), 2000);
   };
 
   return (
