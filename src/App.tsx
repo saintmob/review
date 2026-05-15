@@ -182,7 +182,7 @@ export default function App() {
     >
       {/* Visual Canvas Layer */}
       <div className="absolute inset-0 z-0 pointer-events-none">
-        <Canvas camera={{ position: [0, 0, 15], fov: 60 }} dpr={[1, 2]} gl={{ antialias: false, alpha: true }}>
+        <Canvas camera={{ position: [0, 0, 15], fov: 60 }} dpr={[1, 2]} gl={{ antialias: false }}>
           <ambientLight intensity={0.5} />
           <ParticleScene 
             audioData={audioData} 
