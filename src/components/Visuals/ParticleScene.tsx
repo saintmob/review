@@ -56,179 +56,6 @@ function createGlyphTexture() {
   return texture;
 }
 
-const NOTE_VARIANT_COUNT = 6;
-
-type NoteParticle = {
-  position: THREE.Vector3;
-  rotation: THREE.Euler;
-  scale: number;
-  stretch: { x: number; y: number };
-  drift: THREE.Vector3;
-  phase: number;
-  speed: number;
-  spin: number;
-  screen: { col: number; row: number };
-};
-
-function createNoteTexture(variant: number) {
-  const canvas = document.createElement('canvas');
-  canvas.width = 128;
-  canvas.height = 128;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return null;
-
-  const drawHead = (x: number, y: number, size = 14, tilt = -0.34) => {
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(tilt);
-    ctx.scale(1.28, 0.78);
-    ctx.beginPath();
-    ctx.arc(0, 0, size, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-  };
-
-  const drawBeamedPair = () => {
-    drawHead(34, 90);
-    drawHead(82, 80);
-    ctx.fillRect(49, 26, 7, 61);
-    ctx.fillRect(97, 16, 7, 61);
-    ctx.beginPath();
-    ctx.moveTo(55, 26);
-    ctx.lineTo(104, 16);
-    ctx.lineTo(104, 27);
-    ctx.lineTo(55, 37);
-    ctx.closePath();
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.moveTo(55, 43);
-    ctx.lineTo(104, 33);
-    ctx.lineTo(104, 41);
-    ctx.lineTo(55, 51);
-    ctx.closePath();
-    ctx.fill();
-  };
-
-  const drawSingleEighth = () => {
-    drawHead(48, 88, 16);
-    ctx.fillRect(65, 22, 8, 63);
-    ctx.beginPath();
-    ctx.moveTo(72, 22);
-    ctx.bezierCurveTo(98, 27, 107, 43, 99, 59);
-    ctx.bezierCurveTo(91, 50, 82, 45, 72, 43);
-    ctx.closePath();
-    ctx.fill();
-  };
-
-  const drawLongStem = () => {
-    drawHead(58, 94, 15, -0.28);
-    ctx.fillRect(73, 14, 8, 78);
-    ctx.beginPath();
-    ctx.moveTo(78, 14);
-    ctx.lineTo(95, 33);
-    ctx.lineTo(82, 41);
-    ctx.closePath();
-    ctx.fill();
-  };
-
-  const drawBeamedTriplet = () => {
-    drawHead(31, 88, 10);
-    drawHead(62, 82, 10);
-    drawHead(93, 76, 10);
-    ctx.fillRect(43, 36, 6, 49);
-    ctx.fillRect(74, 30, 6, 49);
-    ctx.fillRect(105, 24, 6, 49);
-    ctx.beginPath();
-    ctx.moveTo(48, 36);
-    ctx.lineTo(111, 24);
-    ctx.lineTo(111, 34);
-    ctx.lineTo(48, 46);
-    ctx.closePath();
-    ctx.fill();
-  };
-
-  const drawTinyPair = () => {
-    drawHead(43, 76, 8);
-    drawHead(76, 72, 8);
-    ctx.fillRect(52, 43, 5, 31);
-    ctx.fillRect(85, 39, 5, 31);
-    ctx.beginPath();
-    ctx.moveTo(56, 43);
-    ctx.lineTo(90, 39);
-    ctx.lineTo(90, 47);
-    ctx.lineTo(56, 51);
-    ctx.closePath();
-    ctx.fill();
-  };
-
-  const drawAngledBeam = () => {
-    drawHead(38, 92, 12, -0.46);
-    drawHead(88, 58, 12, -0.46);
-    ctx.save();
-    ctx.translate(52, 85);
-    ctx.rotate(-0.78);
-    ctx.fillRect(0, 0, 7, 63);
-    ctx.restore();
-    ctx.save();
-    ctx.translate(101, 51);
-    ctx.rotate(-0.78);
-    ctx.fillRect(0, 0, 7, 59);
-    ctx.restore();
-    ctx.beginPath();
-    ctx.moveTo(68, 32);
-    ctx.lineTo(111, 2);
-    ctx.lineTo(116, 12);
-    ctx.lineTo(73, 42);
-    ctx.closePath();
-    ctx.fill();
-  };
-
-  const drawVariant = () => {
-    switch (variant % NOTE_VARIANT_COUNT) {
-      case 0:
-        drawBeamedPair();
-        break;
-      case 1:
-        drawSingleEighth();
-        break;
-      case 2:
-        drawLongStem();
-        break;
-      case 3:
-        drawBeamedTriplet();
-        break;
-      case 4:
-        drawTinyPair();
-        break;
-      default:
-        drawAngledBeam();
-        break;
-    }
-  };
-
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  ctx.save();
-  ctx.shadowColor = 'rgba(94,234,212,0.5)';
-  ctx.shadowBlur = 18;
-  ctx.fillStyle = 'rgba(255,255,255,0.34)';
-  drawVariant();
-  ctx.restore();
-
-  ctx.save();
-  ctx.shadowColor = 'rgba(255,255,255,0.38)';
-  ctx.shadowBlur = 4;
-  ctx.fillStyle = 'rgba(255,255,255,0.96)';
-  drawVariant();
-  ctx.restore();
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.needsUpdate = true;
-  return texture;
-}
-
 export const ParticleScene: React.FC<ParticleSceneProps> = ({
   audioData,
   interactionPoint,
@@ -253,7 +80,7 @@ export const ParticleScene: React.FC<ParticleSceneProps> = ({
   const branchLineRef = useRef<THREE.LineSegments>(null);
   const fiberRef = useRef<THREE.LineSegments>(null);
   const rootFiberRef = useRef<THREE.LineSegments>(null);
-  const noteFieldRefs = useRef<Array<THREE.InstancedMesh | null>>([]);
+  const squareFieldRef = useRef<THREE.InstancedMesh>(null);
   const meshRef = useRef<THREE.Group>(null);
   const ripplePhaseRef = useRef(0);
   const count = 26000;
@@ -265,7 +92,7 @@ export const ParticleScene: React.FC<ParticleSceneProps> = ({
   const shardCount = 90;
   const opacityRef = useRef(0);
   const colorRef = useRef(new THREE.Color("#22d3ee"));
-  const noteMatrixObject = useMemo(() => new THREE.Object3D(), []);
+  const squareMatrixObject = useMemo(() => new THREE.Object3D(), []);
   const { viewport } = useThree();
   const screenCenter = getScreenCenter(screenId);
   const isOverviewScreen = screenId === 'OVERVIEW';
@@ -281,10 +108,6 @@ export const ParticleScene: React.FC<ParticleSceneProps> = ({
     ? [-screenCenter.x, -screenCenter.y, 0]
     : [-screenCenter.x * sceneScale.x, -screenCenter.y * sceneScale.y, 0];
   const glyphTexture = useMemo(() => createGlyphTexture(), []);
-  const noteTextures = useMemo(
-    () => Array.from({ length: NOTE_VARIANT_COUNT }, (_, index) => createNoteTexture(index)),
-    []
-  );
   const screenCenters = useMemo(() => Object.entries(SCREEN_LAYOUT).map(([id, layout]) => {
     const point = layoutToWorldPoint(layout);
     return {
@@ -376,51 +199,31 @@ export const ParticleScene: React.FC<ParticleSceneProps> = ({
     return pos;
   }, [mistCount]);
 
-  const noteGroups = useMemo(() => {
-    const groups: NoteParticle[][] = Array.from({ length: NOTE_VARIANT_COUNT }, () => []);
-    const notesPerScreen = 72;
-    const noteCols = 14;
-    const noteRows = Math.ceil(notesPerScreen / noteCols);
-    const variantStretch = [
-      { x: 1.18, y: 1.08 },
-      { x: 0.86, y: 1.2 },
-      { x: 0.76, y: 1.34 },
-      { x: 1.36, y: 0.9 },
-      { x: 1.06, y: 0.8 },
-      { x: 1.28, y: 1.08 },
-    ];
-
+  const squareData = useMemo(() => {
+    const squares: Array<{ position: THREE.Vector3; rotation: THREE.Euler; scale: number; screen: { col: number; row: number } }> = [];
+    const squaresPerScreen = 72;
+    const squareCols = 14;
+    const squareRows = Math.ceil(squaresPerScreen / squareCols);
     Object.values(SCREEN_LAYOUT).forEach((screen) => {
-      for (let i = 0; i < notesPerScreen; i++) {
-        const gridX = i % noteCols;
-        const gridY = Math.floor(i / noteCols) % noteRows;
-        const offsetX = ((gridX + 0.2 + Math.random() * 0.6) / noteCols - 0.5) * 10.4;
-        const offsetY = ((gridY + 0.2 + Math.random() * 0.6) / noteRows - 0.5) * 6.4;
+      for (let i = 0; i < squaresPerScreen; i++) {
+        const gridX = i % squareCols;
+        const gridY = Math.floor(i / squareCols) % squareRows;
+        const offsetX = ((gridX + 0.2 + Math.random() * 0.6) / squareCols - 0.5) * 10.4;
+        const offsetY = ((gridY + 0.2 + Math.random() * 0.6) / squareRows - 0.5) * 6.4;
         const point = layoutToWorldPoint(screen);
-        const variant = Math.floor(Math.random() * NOTE_VARIANT_COUNT);
-
-        groups[variant].push({
+        squares.push({
           position: new THREE.Vector3(
             point.x + offsetX,
             point.y + offsetY,
             (Math.random() - 0.5) * 6
           ),
           rotation: new THREE.Euler(0, 0, Math.random() * Math.PI),
-          scale: 0.07 + Math.pow(Math.random(), 0.75) * 0.14,
-          stretch: variantStretch[variant],
-          drift: new THREE.Vector3(
-            0.16 + Math.random() * 0.24,
-            0.14 + Math.random() * 0.22,
-            0.08 + Math.random() * 0.14
-          ),
-          phase: Math.random() * Math.PI * 2,
-          speed: 0.45 + Math.random() * 0.85,
-          spin: (Math.random() > 0.5 ? 1 : -1) * (0.16 + Math.random() * 0.34),
+          scale: 0.055 + Math.random() * 0.04,
           screen,
         });
       }
     });
-    return groups;
+    return squares;
   }, []);
 
   const [energyPositions, energyInitial, energyOrder] = useMemo(() => {
@@ -865,15 +668,13 @@ export const ParticleScene: React.FC<ParticleSceneProps> = ({
       posAttr.needsUpdate = true;
     }
 
-    noteGroups.forEach((notes, variantIndex) => {
-      const mesh = noteFieldRefs.current[variantIndex];
-      if (!mesh) return;
-
+    if (squareFieldRef.current) {
+      const mesh = squareFieldRef.current;
       const material = mesh.material as THREE.MeshBasicMaterial;
       material.color.copy(tempoColor);
       material.opacity = Math.min(0.82, 0.34 + intensity * 0.22);
 
-      notes.forEach((data, i) => {
+      squareData.forEach((data, i) => {
         let pulse = 0;
 
         if (mode === 'interaction' && visibleGrowth <= 0.001 && sourceLayout) {
@@ -882,29 +683,22 @@ export const ParticleScene: React.FC<ParticleSceneProps> = ({
           pulse = Math.sin(delayed * Math.PI) * 0.9;
         }
 
-        const driftPower = 0.78 + intensity * 0.7 + pulse * 0.42;
-        const sway = Math.sin(time * data.speed + data.phase);
-        const lift = Math.cos(time * (data.speed * 0.82) + data.phase * 1.37);
-        const float = Math.sin(time * (data.speed * 0.56) + data.phase * 0.71);
-        const noteScale = data.scale * (1.08 + intensity * 0.34 + pulse * 1.25);
-
-        noteMatrixObject.position.set(
-          data.position.x + sway * data.drift.x * driftPower + Math.sin(time * 0.22 + i * 0.19) * data.drift.x * 0.42,
-          data.position.y + lift * data.drift.y * driftPower + Math.cos(time * 0.18 + i * 0.23) * data.drift.y * 0.34,
-          data.position.z + float * data.drift.z * driftPower
+        squareMatrixObject.position.set(
+          data.position.x + Math.sin(time * 0.7 + i * 1.37) * 0.04,
+          data.position.y + Math.cos(time * 0.6 + i * 1.91) * 0.035,
+          data.position.z + Math.sin(time * 0.8 + i * 0.73) * 0.04
         );
-        noteMatrixObject.rotation.set(
+        squareMatrixObject.rotation.set(
           0,
           0,
-          data.rotation.z + time * (data.spin + pulse * 0.45) + Math.cos(time * 0.9 + i + variantIndex) * 0.12
+          data.rotation.z + time * (0.28 + pulse * 0.45) + Math.cos(time * 0.9 + i) * 0.08
         );
-        noteMatrixObject.scale.set(noteScale * data.stretch.x, noteScale * data.stretch.y, noteScale);
-        noteMatrixObject.updateMatrix();
-        mesh.setMatrixAt(i, noteMatrixObject.matrix);
+        squareMatrixObject.scale.setScalar(data.scale * (1.08 + intensity * 0.34 + pulse * 1.25));
+        squareMatrixObject.updateMatrix();
+        mesh.setMatrixAt(i, squareMatrixObject.matrix);
       });
-
       mesh.instanceMatrix.needsUpdate = true;
-    });
+    }
 
     if (energyRef.current) {
       const posAttr = energyRef.current.geometry.attributes.position;
@@ -1023,26 +817,17 @@ export const ParticleScene: React.FC<ParticleSceneProps> = ({
         />
       </points>
 
-      {noteGroups.map((notes, variantIndex) => (
-        <instancedMesh
-          key={`note-variant-${variantIndex}`}
-          ref={(mesh) => {
-            noteFieldRefs.current[variantIndex] = mesh;
-          }}
-          args={[undefined, undefined, notes.length]}
-        >
-          <planeGeometry args={[1, 1]} />
-          <meshBasicMaterial
-            color="#5eead4"
-            map={noteTextures[variantIndex] ?? undefined}
-            transparent
-            opacity={0.34}
-            alphaTest={0.04}
-            depthWrite={false}
-            blending={THREE.AdditiveBlending}
-          />
-        </instancedMesh>
-      ))}
+      <instancedMesh ref={squareFieldRef} args={[undefined, undefined, squareData.length]}>
+        <planeGeometry args={[1, 1]} />
+        <meshBasicMaterial
+          color="#5eead4"
+          transparent
+          opacity={0.34}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          wireframe
+        />
+      </instancedMesh>
 
       <points ref={energyRef}>
         <bufferGeometry>
