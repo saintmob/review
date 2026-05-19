@@ -14,8 +14,8 @@ const firebaseConfig = {
 export const isFirebaseConfigured = Object.values(firebaseConfig).every(Boolean);
 
 const app = isFirebaseConfigured ? initializeApp(firebaseConfig) : null;
-// @ts-ignore
-export const db = app ? getFirestore(app, import.meta.env.VITE_FIREBASE_DATABASE_ID) : null;
+const databaseId = import.meta.env.VITE_FIREBASE_DATABASE_ID;
+export const db = app ? (databaseId ? getFirestore(app, databaseId) : getFirestore(app)) : null;
 export const auth = app ? getAuth(app) : null;
 
 // Test connection

@@ -98,20 +98,33 @@ export const ParticleScene: React.FC<ParticleSceneProps> = ({
   const branchLineRef = useRef<THREE.LineSegments>(null);
   const fiberRef = useRef<THREE.LineSegments>(null);
   const rootFiberRef = useRef<THREE.LineSegments>(null);
-  const squareFieldRef = useRef<THREE.Group>(null);
+  const squareFieldRef = useRef<THREE.InstancedMesh>(null);
   const meshRef = useRef<THREE.Group>(null);
   const ripplePhaseRef = useRef(0);
-  const count = 38000;
-  const leafCount = 28000;
-  const mistCount = 140000;
-  const energyCount = 7000;
-  const pollenCount = 4500;
-  const glyphCount = 2500;
+  const count = 26000;
+  const leafCount = 14000;
+  const mistCount = 76000;
+  const energyCount = 4000;
+  const pollenCount = 2500;
+  const glyphCount = 1400;
   const shardCount = 90;
   const opacityRef = useRef(0);
   const colorRef = useRef(new THREE.Color("#22d3ee"));
+  const squareMatrixObject = useMemo(() => new THREE.Object3D(), []);
+  const { viewport } = useThree();
   const screenCenter = getScreenCenter(screenId);
-  const sceneScale = screenId === 'OVERVIEW' ? 0.36 : 0.9;
+  const isOverviewScreen = screenId === 'OVERVIEW';
+  const singleScreenScale = {
+    x: (viewport.width / 11.2) * 1.08,
+    y: (viewport.height / 6.8) * 1.08,
+    z: 0.9,
+  };
+  const sceneScale = isOverviewScreen
+    ? { x: 0.36, y: 0.36, z: 0.36 }
+    : singleScreenScale;
+  const scenePosition = isOverviewScreen
+    ? [-screenCenter.x, -screenCenter.y, 0]
+    : [-screenCenter.x * sceneScale.x, -screenCenter.y * sceneScale.y, 0];
   const glyphTexture = useMemo(() => createGlyphTexture(), []);
   const screenCenters = useMemo(() => Object.entries(SCREEN_LAYOUT).map(([id, layout]) => ({
     id,
@@ -180,35 +193,45 @@ export const ParticleScene: React.FC<ParticleSceneProps> = ({
     return [pos, order];
   }, [leafCount]);
 
-  const [mistPositions, mistOrder] = useMemo(() => {
+  const mistPositions = useMemo(() => {
     const pos = new Float32Array(mistCount * 3);
-    const order = new Float32Array(mistCount);
     const screens = Object.values(SCREEN_LAYOUT);
+    const particlesPerScreen = Math.ceil(mistCount / screens.length);
+    const gridCols = 80;
+    const gridRows = Math.ceil(particlesPerScreen / gridCols);
     for (let i = 0; i < mistCount; i++) {
-      let screen = screens[i % screens.length];
-      if (i % 8 === 0) screen = SCREEN_LAYOUT.C5;
-      if (i % 8 === 4) screen = SCREEN_LAYOUT.D5;
-      pos[i * 3] = (screen.col - 2.5) * 12 + (Math.random() - 0.5) * 11.2;
-      pos[i * 3 + 1] = (2 - screen.row) * 7 + (Math.random() - 0.5) * 6.8;
+      const screen = screens[i % screens.length];
+      const localIndex = Math.floor(i / screens.length);
+      const gridX = localIndex % gridCols;
+      const gridY = Math.floor(localIndex / gridCols) % gridRows;
+      const offsetX = ((gridX + Math.random()) / gridCols - 0.5) * 11.2;
+      const offsetY = ((gridY + Math.random()) / gridRows - 0.5) * 6.8;
+      pos[i * 3] = (screen.col - 2.5) * 12 + offsetX;
+      pos[i * 3 + 1] = (2 - screen.row) * 7 + offsetY;
       pos[i * 3 + 2] = (Math.random() - 0.5) * 14;
-      order[i] = Math.random();
     }
-    return [pos, order];
+    return pos;
   }, [mistCount]);
 
   const squareData = useMemo(() => {
     const squares: Array<{ position: THREE.Vector3; rotation: THREE.Euler; scale: number; screen: { col: number; row: number } }> = [];
+    const squaresPerScreen = 112;
+    const squareCols = 14;
+    const squareRows = Math.ceil(squaresPerScreen / squareCols);
     Object.values(SCREEN_LAYOUT).forEach((screen) => {
-      const extra = screen === SCREEN_LAYOUT.C5 || screen === SCREEN_LAYOUT.D5 ? 130 : 32;
-      for (let i = 0; i < 64 + extra; i++) {
+      for (let i = 0; i < squaresPerScreen; i++) {
+        const gridX = i % squareCols;
+        const gridY = Math.floor(i / squareCols) % squareRows;
+        const offsetX = ((gridX + 0.2 + Math.random() * 0.6) / squareCols - 0.5) * 10.4;
+        const offsetY = ((gridY + 0.2 + Math.random() * 0.6) / squareRows - 0.5) * 6.4;
         squares.push({
           position: new THREE.Vector3(
-            (screen.col - 2.5) * 12 + (Math.random() - 0.5) * 10.4,
-            (2 - screen.row) * 7 + (Math.random() - 0.5) * 6.4,
+            (screen.col - 2.5) * 12 + offsetX,
+            (2 - screen.row) * 7 + offsetY,
             (Math.random() - 0.5) * 6
           ),
-          rotation: new THREE.Euler(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI),
-          scale: (screen === SCREEN_LAYOUT.C5 || screen === SCREEN_LAYOUT.D5 ? 0.16 : 0.1) + Math.random() * 0.08,
+          rotation: new THREE.Euler(0, 0, Math.random() * Math.PI),
+          scale: 0.055 + Math.random() * 0.04,
           screen,
         });
       }
@@ -267,7 +290,7 @@ export const ParticleScene: React.FC<ParticleSceneProps> = ({
   }, [glyphCount]);
 
   const [branchLinePositions, branchLineOrder] = useMemo(() => {
-    const segments = 320;
+    const segments = 180;
     const pos = new Float32Array(segments * 2 * 3);
     const order = new Float32Array(segments);
     for (let i = 0; i < segments; i++) {
@@ -292,8 +315,8 @@ export const ParticleScene: React.FC<ParticleSceneProps> = ({
   }, []);
 
   const [contourPositions, contourOrder] = useMemo(() => {
-    const rings = 14;
-    const steps = 96;
+    const rings = 10;
+    const steps = 64;
     const pos = new Float32Array(rings * steps * 2 * 3);
     const order = new Float32Array(rings * steps);
     let cursor = 0;
@@ -317,7 +340,7 @@ export const ParticleScene: React.FC<ParticleSceneProps> = ({
   }, []);
 
   const [fiberPositions, fiberOrder] = useMemo(() => {
-    const segmentCount = 26000;
+    const segmentCount = 9000;
     const pos = new Float32Array(segmentCount * 2 * 3);
     const order = new Float32Array(segmentCount);
     let segment = 0;
@@ -337,7 +360,7 @@ export const ParticleScene: React.FC<ParticleSceneProps> = ({
 
     for (let strand = 0; strand < 1150; strand++) {
       const type = Math.random();
-      const steps = 8 + Math.floor(Math.random() * 22);
+      const steps = 6 + Math.floor(Math.random() * 12);
       const branchSide = Math.random() > 0.5 ? 1 : -1;
       const baseT = Math.random();
       let p: THREE.Vector3;
@@ -400,7 +423,7 @@ export const ParticleScene: React.FC<ParticleSceneProps> = ({
   }, []);
 
   const [rootFiberPositions, rootFiberOrder] = useMemo(() => {
-    const segmentCount = 9000;
+    const segmentCount = 3200;
     const pos = new Float32Array(segmentCount * 2 * 3);
     const order = new Float32Array(segmentCount);
     let segment = 0;
@@ -420,7 +443,7 @@ export const ParticleScene: React.FC<ParticleSceneProps> = ({
 
     for (let strand = 0; strand < 360; strand++) {
       const side = Math.random() > 0.5 ? 1 : -1;
-      const steps = 10 + Math.floor(Math.random() * 18);
+      const steps = 7 + Math.floor(Math.random() * 10);
       let p = new THREE.Vector3((Math.random() - 0.5) * 2.2, -15.6 + Math.random() * 1.5, (Math.random() - 0.5) * 1.8);
       let direction = new THREE.Vector3(side * (0.35 + Math.random() * 0.65), -0.12 + Math.random() * 0.12, (Math.random() - 0.5) * 0.2);
       for (let step = 0; step < steps; step++) {
@@ -659,29 +682,35 @@ export const ParticleScene: React.FC<ParticleSceneProps> = ({
     }
 
     if (squareFieldRef.current) {
-      squareFieldRef.current.children.forEach((child, i) => {
-        const mesh = child as THREE.Mesh;
-        const material = mesh.material as THREE.MeshStandardMaterial;
+      const mesh = squareFieldRef.current;
+      const material = mesh.material as THREE.MeshBasicMaterial;
+      material.color.copy(tempoColor);
+      material.opacity = Math.min(0.82, 0.34 + intensity * 0.22);
+
+      squareData.forEach((data, i) => {
         let pulse = 0;
 
         if (mode === 'interaction' && visibleGrowth <= 0.001 && sourceLayout) {
-          const data = squareData[i];
           const distance = Math.abs(data.screen.col - sourceLayout.col) + Math.abs(data.screen.row - sourceLayout.row);
           const delayed = THREE.MathUtils.clamp((pulseAge - distance * 0.07) / 0.75, 0, 1);
           pulse = Math.sin(delayed * Math.PI) * 0.9;
         }
 
-        mesh.position.x += Math.sin(time * 0.7 + i * 1.37) * 0.0025;
-        mesh.position.y += Math.cos(time * 0.6 + i * 1.91) * 0.002;
-        mesh.position.z += Math.sin(time * 0.8 + i * 0.73) * 0.0025;
-        mesh.rotation.x += 0.008 + pulse * 0.025 + Math.sin(time + i) * 0.001;
-        mesh.rotation.z += 0.006 + pulse * 0.02 + Math.cos(time * 0.9 + i) * 0.001;
-        mesh.scale.setScalar(squareData[i].scale * (1 + pulse * 1.2));
-        material.color.copy(tempoColor.clone().lerp(new THREE.Color("#ffffff"), pulse * 0.35));
-        material.emissive.copy(material.color);
-        material.opacity = Math.min(0.95, 0.42 + pulse * 0.6 + intensity * 0.28);
-        material.emissiveIntensity = 1.25 + pulse * 3.1 + intensity * 3.8;
+        squareMatrixObject.position.set(
+          data.position.x + Math.sin(time * 0.7 + i * 1.37) * 0.04,
+          data.position.y + Math.cos(time * 0.6 + i * 1.91) * 0.035,
+          data.position.z + Math.sin(time * 0.8 + i * 0.73) * 0.04
+        );
+        squareMatrixObject.rotation.set(
+          0,
+          0,
+          data.rotation.z + time * (0.28 + pulse * 0.45) + Math.cos(time * 0.9 + i) * 0.08
+        );
+        squareMatrixObject.scale.setScalar(data.scale * (1.08 + intensity * 0.34 + pulse * 1.25));
+        squareMatrixObject.updateMatrix();
+        mesh.setMatrixAt(i, squareMatrixObject.matrix);
       });
+      mesh.instanceMatrix.needsUpdate = true;
     }
 
     if (energyRef.current) {
@@ -699,14 +728,12 @@ export const ParticleScene: React.FC<ParticleSceneProps> = ({
     }
 
     if (mistRef.current) {
-      const posAttr = mistRef.current.geometry.attributes.position;
-      for (let i = 0; i < mistCount; i++) {
-        const ix = i * 3;
-        const drift = 0.002 + mistOrder[i] * 0.002;
-        posAttr.array[ix] += Math.sin(time * 0.22 + mistOrder[i] * 13) * drift;
-        posAttr.array[ix + 1] += Math.cos(time * 0.18 + mistOrder[i] * 19) * drift;
-      }
-      posAttr.needsUpdate = true;
+      mistRef.current.position.set(
+        Math.sin(time * 0.08) * (1.6 + intensity * 1.2),
+        Math.cos(time * 0.07) * (0.95 + intensity * 0.75),
+        0
+      );
+      mistRef.current.rotation.z = Math.sin(time * 0.06) * 0.035;
     }
 
     if (pollenRef.current) {
@@ -742,7 +769,7 @@ export const ParticleScene: React.FC<ParticleSceneProps> = ({
   });
 
   return (
-    <group position={[-screenCenter.x, -screenCenter.y, 0]} scale={sceneScale}>
+    <group position={scenePosition as [number, number, number]} scale={[sceneScale.x, sceneScale.y, sceneScale.z]}>
       <points ref={pointsRef}>
         <bufferGeometry>
           <bufferAttribute
@@ -803,23 +830,17 @@ export const ParticleScene: React.FC<ParticleSceneProps> = ({
         />
       </points>
 
-      <group ref={squareFieldRef}>
-        {squareData.map((data, i) => (
-          <mesh key={i} position={data.position} rotation={data.rotation} scale={data.scale}>
-            <boxGeometry args={[1, 1, 1]} />
-            <meshStandardMaterial
-              color="#5eead4"
-              emissive="#5eead4"
-              emissiveIntensity={0.5}
-              transparent
-              opacity={0.34}
-              depthWrite={false}
-              blending={THREE.AdditiveBlending}
-              wireframe
-            />
-          </mesh>
-        ))}
-      </group>
+      <instancedMesh ref={squareFieldRef} args={[undefined, undefined, squareData.length]}>
+        <planeGeometry args={[1, 1]} />
+        <meshBasicMaterial
+          color="#5eead4"
+          transparent
+          opacity={0.34}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          wireframe
+        />
+      </instancedMesh>
 
       <points ref={energyRef}>
         <bufferGeometry>

@@ -15,6 +15,10 @@ View your app in AI Studio: https://ai.studio/apps/328f1f1f-1bc9-4087-b227-2d41a
 
 1. Install dependencies:
    `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
+2. Copy [.env.example](.env.example) to `.env.local`
+3. Optional: set the `VITE_FIREBASE_*` values in `.env.local` to enable multi-screen sync
+4. Optional: set `GEMINI_API_KEY` if you are running this through AI Studio
+5. Run the app:
    `npm run dev`
+
+Without Firebase values, the app still runs locally as a single-screen preview and shows sync as disabled.

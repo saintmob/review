@@ -2,14 +2,14 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useAudio } from './hooks/useAudio';
 import { useHandTracking } from './hooks/useHandTracking';
 import { AnimatePresence, motion } from 'motion/react';
-import { Canvas } from '@react-three/fiber';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Bloom, EffectComposer } from '@react-three/postprocessing';
 import { ParticleScene } from './components/Visuals/ParticleScene';
 import * as Tone from 'tone';
 import * as THREE from 'three';
 import { db, handleFirestoreError, isFirebaseConfigured, OperationType } from './lib/firebase';
 import { doc, getDocFromServer, onSnapshot, setDoc } from 'firebase/firestore';
-import { Camera, CameraOff, LayoutGrid, MonitorCog, RotateCcw } from 'lucide-react';
+import { Activity, Camera, CameraOff, LayoutGrid, MonitorCog, RotateCcw } from 'lucide-react';
 
 const SCREEN_ROWS = [
   ['A1', 'B1', 'C1', 'D1', 'E1', 'F1'],
@@ -57,6 +57,69 @@ function getScreenFromPointer(clientX: number, clientY: number, rect: DOMRect, f
   return id || fallback;
 }
 
+type WebGLStats = {
+  fps: number;
+  frameMs: number;
+  calls: number;
+  triangles: number;
+  points: number;
+  lines: number;
+  geometries: number;
+  textures: number;
+  pixelRatio: number;
+  viewport: string;
+};
+
+function WebGLDebugProbe({ onStats }: { onStats: (stats: WebGLStats) => void }) {
+  const { gl, size } = useThree();
+  const lastSampleRef = useRef(performance.now());
+  const frameCountRef = useRef(0);
+  const frameMsRef = useRef(0);
+
+  useEffect(() => {
+    const previousAutoReset = gl.info.autoReset;
+    gl.info.autoReset = false;
+    gl.info.reset();
+
+    return () => {
+      gl.info.autoReset = previousAutoReset;
+      gl.info.reset();
+    };
+  }, [gl]);
+
+  useFrame((_, delta) => {
+    frameCountRef.current += 1;
+    frameMsRef.current += delta * 1000;
+
+    const now = performance.now();
+    if (now - lastSampleRef.current < 500) return;
+
+    const elapsed = now - lastSampleRef.current;
+    const frames = frameCountRef.current;
+    const info = gl.info;
+
+    onStats({
+      fps: Math.round((frames * 1000) / elapsed),
+      frameMs: Number((frameMsRef.current / Math.max(1, frames)).toFixed(1)),
+      calls: Math.round(info.render.calls / Math.max(1, frames)),
+      triangles: Math.round(info.render.triangles / Math.max(1, frames)),
+      points: Math.round(info.render.points / Math.max(1, frames)),
+      lines: Math.round(info.render.lines / Math.max(1, frames)),
+      geometries: info.memory.geometries,
+      textures: info.memory.textures,
+      pixelRatio: Number(gl.getPixelRatio().toFixed(2)),
+      viewport: `${size.width}x${size.height}`,
+    });
+
+    gl.info.reset();
+    frameCountRef.current = 0;
+    frameMsRef.current = 0;
+    lastSampleRef.current = now;
+  });
+
+  return null;
+}
+
 export default function App() {
   const { isStarted, startAudio, triggerNote, setMusicEvolution, evolution, getAudioData } = useAudio();
   const { isHandOpen, openHandCount, hasHandDetected, isCameraActive, cameraError, startCamera, stopCamera } = useHandTracking();
@@ -73,6 +136,8 @@ export default function App() {
   const [treeTriggered, setTreeTriggered] = useState(false);
   const [screenPulse, setScreenPulse] = useState<{ source: string; timestamp: number } | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'error' | 'connecting'>('connecting');
+  const [showWebGLDebug, setShowWebGLDebug] = useState(false);
+  const [webglStats, setWebglStats] = useState<WebGLStats | null>(null);
   const intensityRef = useRef(0.08);
   const lastClickTimeRef = useRef(0);
   const treeGrowthRef = useRef(0);
@@ -295,7 +360,7 @@ export default function App() {
       onPointerUp={handleSplashPointerUp}
     >
       <div className="absolute inset-0 z-0 pointer-events-none">
-        <Canvas camera={{ position: [0, 0, 15], fov: 60 }} dpr={[1, 2]} gl={{ antialias: false }}>
+        <Canvas camera={{ position: [0, 0, 15], fov: 60 }} dpr={1} gl={{ antialias: false, powerPreference: 'high-performance' }}>
           <ambientLight intensity={0.45} />
           <ParticleScene
             audioData={audioData}
@@ -310,6 +375,7 @@ export default function App() {
             isStarted={treeGrowth > 0 || mode === 'interaction'}
             isPaused={false}
           />
+          {showWebGLDebug && <WebGLDebugProbe onStats={setWebglStats} />}
           <EffectComposer>
             <Bloom intensity={1.15 + intensity * 1.75} luminanceThreshold={0.18} luminanceSmoothing={0.92} />
           </EffectComposer>
@@ -363,6 +429,13 @@ export default function App() {
             title="Screen routing"
           >
             <MonitorCog size={18} />
+          </button>
+          <button
+            onClick={() => setShowWebGLDebug((value) => !value)}
+            className={`ml-3 p-3 rounded-full border transition-all duration-500 backdrop-blur-md ${showWebGLDebug ? 'border-amber-300/50 bg-amber-300/15 text-amber-100' : 'border-white/10 bg-white/5 text-white/50 hover:border-white/20 hover:bg-white/10'}`}
+            title="WebGL debug"
+          >
+            <Activity size={18} />
           </button>
 
           {isCameraActive && (
@@ -472,6 +545,48 @@ export default function App() {
           {isFirebaseConfigured ? 'Sync Offline / 同步离线' : 'Sync Disabled / 同步未启用'}
         </div>
       )}
+
+      <AnimatePresence>
+        {showWebGLDebug && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+            className="fixed bottom-6 left-6 z-50 w-[280px] max-w-[calc(100vw-3rem)] pointer-events-auto rounded border border-amber-300/20 bg-black/65 p-4 font-mono text-[10px] uppercase tracking-[0.18em] text-white/65 backdrop-blur-xl"
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-amber-100/90">
+                <Activity size={14} />
+                <span>WebGL Debug / 调试</span>
+              </div>
+              <button
+                onClick={() => setShowWebGLDebug(false)}
+                className="rounded border border-white/10 px-2 py-1 text-[9px] text-white/45 hover:border-white/20 hover:text-white/80"
+              >
+                Off
+              </button>
+            </div>
+
+            {webglStats ? (
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                <span>FPS</span><span className="text-right text-cyan-100">{webglStats.fps}</span>
+                <span>Frame</span><span className="text-right text-cyan-100">{webglStats.frameMs}ms</span>
+                <span>Calls</span><span className="text-right text-cyan-100">{webglStats.calls}</span>
+                <span>Triangles</span><span className="text-right text-cyan-100">{webglStats.triangles.toLocaleString()}</span>
+                <span>Points</span><span className="text-right text-cyan-100">{webglStats.points.toLocaleString()}</span>
+                <span>Lines</span><span className="text-right text-cyan-100">{webglStats.lines.toLocaleString()}</span>
+                <span>Geometry</span><span className="text-right text-cyan-100">{webglStats.geometries}</span>
+                <span>Textures</span><span className="text-right text-cyan-100">{webglStats.textures}</span>
+                <span>DPR</span><span className="text-right text-cyan-100">{webglStats.pixelRatio}</span>
+                <span>Viewport</span><span className="text-right text-cyan-100">{webglStats.viewport}</span>
+              </div>
+            ) : (
+              <div className="text-white/35">Collecting render stats / 正在采样</div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="fixed bottom-6 right-6 flex flex-col items-end gap-2 pointer-events-none z-50">
         <div className={`px-3 py-1.5 rounded-full text-[10px] font-mono tracking-widest uppercase transition-all duration-500 border ${
