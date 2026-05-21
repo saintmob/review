@@ -9,6 +9,19 @@ export const STORAGE_KEY = "ensemble-field-manual-v5";
 const SESSION_COOKIE = "show_plan_admin";
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 12;
 
+export function normalizeAdminPassword(value: unknown) {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  const quotePairs: Array<[string, string]> = [
+    ['"', '"'],
+    ["'", "'"],
+    ["“", "”"],
+    ["‘", "’"],
+  ];
+  const pair = quotePairs.find(([open, close]) => trimmed.startsWith(open) && trimmed.endsWith(close));
+  return pair ? trimmed.slice(pair[0].length, -pair[1].length).trim() : trimmed;
+}
+
 function getSessionSecret() {
   return process.env.SESSION_SECRET || "local-dev-session-secret";
 }

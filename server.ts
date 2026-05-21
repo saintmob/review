@@ -13,6 +13,19 @@ const PLAN_DOC_PATH = ["showPlans", "ensemble-flow"] as const;
 const SESSION_COOKIE = "show_plan_admin";
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 12;
 
+function normalizeAdminPassword(value: unknown) {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  const quotePairs: Array<[string, string]> = [
+    ['"', '"'],
+    ["'", "'"],
+    ["“", "”"],
+    ["‘", "’"],
+  ];
+  const pair = quotePairs.find(([open, close]) => trimmed.startsWith(open) && trimmed.endsWith(close));
+  return pair ? trimmed.slice(pair[0].length, -pair[1].length).trim() : trimmed;
+}
+
 function getSessionSecret() {
   return process.env.SESSION_SECRET || "local-dev-session-secret";
 }
@@ -148,13 +161,13 @@ async function startServer() {
   });
 
   app.post("/api/admin/login", (req, res) => {
-    const configuredPassword = process.env.ADMIN_PASSWORD;
+    const configuredPassword = normalizeAdminPassword(process.env.ADMIN_PASSWORD);
     if (!configuredPassword) {
       res.status(503).json({ error: "ADMIN_PASSWORD is not configured" });
       return;
     }
 
-    if (req.body?.password !== configuredPassword) {
+    if (normalizeAdminPassword(req.body?.password) !== configuredPassword) {
       res.status(401).json({ error: "Invalid password" });
       return;
     }
