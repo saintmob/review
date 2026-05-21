@@ -102,14 +102,50 @@ function parseServiceAccount() {
   if (!raw) return null;
 
   const decoded = raw.trim().startsWith("{")
-    ? raw
-    : Buffer.from(raw, "base64").toString("utf8");
-  const serviceAccount = JSON.parse(decoded);
+    ? raw.trim()
+    : Buffer.from(raw.trim(), "base64").toString("utf8").trim();
+  const serviceAccount = JSON.parse(extractJsonObject(decoded));
   if (typeof serviceAccount.private_key === "string") {
     serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, "\n");
   }
 
   return serviceAccount;
+}
+
+function extractJsonObject(value: string) {
+  try {
+    JSON.parse(value);
+    return value;
+  } catch {
+    const start = value.indexOf("{");
+    if (start === -1) return value;
+
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let index = start; index < value.length; index += 1) {
+      const char = value[index];
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === "\\") {
+        escaped = inString;
+        continue;
+      }
+      if (char === '"') {
+        inString = !inString;
+        continue;
+      }
+      if (inString) continue;
+      if (char === "{") depth += 1;
+      if (char === "}") {
+        depth -= 1;
+        if (depth === 0) return value.slice(start, index + 1);
+      }
+    }
+    return value;
+  }
 }
 
 function getAdminDb(): Firestore | null {

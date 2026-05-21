@@ -85,9 +85,9 @@ function parseServiceAccount() {
 
   try {
     const decoded = raw.trim().startsWith("{")
-      ? raw
-      : Buffer.from(raw, "base64").toString("utf8");
-    const serviceAccount = JSON.parse(decoded);
+      ? raw.trim()
+      : Buffer.from(raw.trim(), "base64").toString("utf8").trim();
+    const serviceAccount = JSON.parse(extractJsonObject(decoded));
     console.log("✅ [FIREBASE DEBUG] 成功解析 FIREBASE_SERVICE_ACCOUNT_JSON");
     console.log("   项目ID:", serviceAccount?.project_id);
     if (typeof serviceAccount.private_key === "string") {
@@ -97,6 +97,45 @@ function parseServiceAccount() {
   } catch (error) {
     console.error("❌ [FIREBASE DEBUG] FIREBASE_SERVICE_ACCOUNT_JSON 解析失败:", error);
     return null;
+  }
+}
+
+function extractJsonObject(value: string) {
+  try {
+    JSON.parse(value);
+    return value;
+  } catch {
+    const start = value.indexOf("{");
+    if (start === -1) return value;
+
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let index = start; index < value.length; index += 1) {
+      const char = value[index];
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === "\\") {
+        escaped = inString;
+        continue;
+      }
+      if (char === '"') {
+        inString = !inString;
+        continue;
+      }
+      if (inString) continue;
+      if (char === "{") depth += 1;
+      if (char === "}") {
+        depth -= 1;
+        if (depth === 0) {
+          console.warn("⚠️ [FIREBASE DEBUG] FIREBASE_SERVICE_ACCOUNT_JSON 包含多余字符，已尝试提取第一个 JSON 对象");
+          return value.slice(start, index + 1);
+        }
+      }
+    }
+    return value;
   }
 }
 
