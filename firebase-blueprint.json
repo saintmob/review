@@ -1,30 +1,37 @@
 {
   "entities": {
-    "SyncState": {
-      "title": "SyncState",
-      "description": "Global synchronization state for the particle system",
+    "ShowPlan": {
+      "title": "ShowPlan",
+      "description": "Editable show plan used by the public page and admin backend",
       "type": "object",
       "properties": {
-        "intensity": { "type": "number", "description": "Current system intensity" },
-        "evolution": { "type": "number", "description": "Global evolution progress" },
-        "mode": { "type": "string", "description": "Current mode" },
-        "lastInteraction": {
+        "data": {
           "type": "object",
-          "properties": {
-            "x": { "type": "number" },
-            "y": { "type": "number" },
-            "z": { "type": "number" },
-            "timestamp": { "type": "number" }
-          }
+          "description": "MemoState payload containing preheat, stages, staff, checklist, and audience sections"
         },
-        "activeNodes": { "type": "array", "items": { "type": "string" } }
+        "title": {
+          "type": "string",
+          "description": "Human-readable plan title"
+        },
+        "schemaVersion": {
+          "type": "string",
+          "description": "Client data schema version"
+        },
+        "updatedAt": {
+          "type": "timestamp",
+          "description": "Server write timestamp"
+        },
+        "updatedBy": {
+          "type": "string",
+          "description": "Identifier for the backend writer"
+        }
       }
     }
   },
   "firestore": {
-    "/global/state": {
-      "schema": "SyncState",
-      "description": "The single source of truth for all synchronized instances"
+    "/showPlans/ensemble-flow": {
+      "schema": "ShowPlan",
+      "description": "Single source of truth for synchronized show plan content"
     }
   }
 }

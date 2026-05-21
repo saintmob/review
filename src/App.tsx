@@ -8,8 +8,10 @@ import {
   CloudOff,
   Download,
   EyeOff,
+  LogOut,
   Laptop,
   ListChecks,
+  LockKeyhole,
   MinusCircle,
   Monitor,
   Music,
@@ -27,7 +29,7 @@ import {
   Users,
   Volume2,
 } from 'lucide-react';
-import { doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { db, handleFirestoreError, isFirebaseConfigured, OperationType } from './lib/firebase';
 
 type GroupKey = 'music' | 'visual' | 'interaction' | 'all' | 'ai' | 'control';
@@ -91,6 +93,7 @@ type SyncStatus = 'local' | 'connecting' | 'synced' | 'dirty' | 'saving' | 'remo
 
 const STORAGE_KEY = 'ensemble-field-manual-v5';
 const PLAN_DOC_PATH = ['showPlans', 'ensemble-flow'];
+const isAdminPath = () => window.location.pathname.replace(/\/+$/, '') === '/admin';
 
 const groupMeta: Record<
   GroupKey,
@@ -444,6 +447,12 @@ function buildTimeSlots<T>(items: T[], startSeconds: number, getDuration: (item:
 function App() {
   const [data, setData] = useState<MemoState>(loadState);
   const [activeTab, setActiveTab] = useState<TabKey>('timeline');
+  const [isAdminRoute] = useState(isAdminPath);
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+  const [isCheckingAdmin, setIsCheckingAdmin] = useState(isAdminPath);
+  const [adminPassword, setAdminPassword] = useState('');
+  const [adminError, setAdminError] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(isFirebaseConfigured ? 'connecting' : 'local');
@@ -457,6 +466,35 @@ function App() {
   useEffect(() => {
     isEditingRef.current = isEditing;
   }, [isEditing]);
+
+  useEffect(() => {
+    if (!isAdminRoute) return;
+
+    let cancelled = false;
+    fetch('/api/admin/session', { credentials: 'include' })
+      .then(async (response) => {
+        if (!response.ok) return { authenticated: false };
+        return response.json() as Promise<{ authenticated: boolean }>;
+      })
+      .then((session) => {
+        if (cancelled) return;
+        setIsAdminAuthenticated(Boolean(session.authenticated));
+        setIsEditing(Boolean(session.authenticated));
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setIsAdminAuthenticated(false);
+          setIsEditing(false);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsCheckingAdmin(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdminRoute]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
@@ -477,6 +515,26 @@ function App() {
     setSyncStatus(isFirebaseConfigured ? 'dirty' : 'local');
     setSyncMessage(isFirebaseConfigured ? '有未保存修改' : '修改已保存在本机');
   }, [data]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/plan')
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return response.json();
+      })
+      .then((payload) => {
+        const remoteData = payload?.plan?.data as MemoState | undefined;
+        if (cancelled || !remoteData || isDirtyRef.current || isEditingRef.current) return;
+        applyingRemoteRef.current = true;
+        setData({ ...defaultState, ...remoteData });
+      })
+      .catch(() => null);
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!db) {
@@ -543,38 +601,95 @@ function App() {
   };
 
   const saveToCloud = async () => {
-    if (!db) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-      isDirtyRef.current = false;
-      setIsDirty(false);
-      setSyncStatus('local');
-      setSyncMessage('已保存到本机；配置 Firebase 后可共享');
+    setSyncStatus('saving');
+    setSyncMessage('正在通过后台保存');
+    try {
+      const response = await fetch('/api/plan', {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data, schemaVersion: STORAGE_KEY }),
+      });
+
+      if (response.status === 401) {
+        setIsAdminAuthenticated(false);
+        setIsEditing(false);
+        throw new Error('登录已失效，请重新输入管理密码');
+      }
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.error || '保存失败');
+      }
+
+      const payload = await response.json().catch(() => null);
+      const remoteData = payload?.plan?.data as MemoState | undefined;
+      if (remoteData) {
+        applyingRemoteRef.current = true;
+        setData({ ...defaultState, ...remoteData });
+      } else {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        isDirtyRef.current = false;
+        setIsDirty(false);
+      }
+      const updatedAt = payload?.plan?.updatedAt;
+      if (updatedAt?._seconds) {
+        setLastSavedAt(new Date(updatedAt._seconds * 1000).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+      }
+      setSyncStatus('synced');
+      setSyncMessage('已保存，其他设备会实时更新');
+    } catch (error) {
+      console.error(error);
+      setSyncStatus('error');
+      setSyncMessage(error instanceof Error ? error.message : '保存失败，请检查后台配置');
+    }
+  };
+
+  const loginAdmin = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setIsLoggingIn(true);
+    setAdminError('');
+    try {
+      const response = await fetch('/api/admin/login', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: adminPassword }),
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.error || '密码不正确');
+      }
+
+      setAdminPassword('');
+      setIsAdminAuthenticated(true);
+      setIsEditing(true);
+    } catch (error) {
+      setAdminError(error instanceof Error ? error.message : '登录失败');
+      setIsAdminAuthenticated(false);
+      setIsEditing(false);
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  const logoutAdmin = async () => {
+    await fetch('/api/admin/logout', {
+      method: 'POST',
+      credentials: 'include',
+    }).catch(() => null);
+    setIsAdminAuthenticated(false);
+    setIsEditing(false);
+  };
+
+  const enterAdmin = () => {
+    if (isAdminRoute) {
+      setIsEditing(isAdminAuthenticated);
       return;
     }
 
-    setSyncStatus('saving');
-    setSyncMessage('正在保存到云端');
-    try {
-      await setDoc(
-        doc(db, PLAN_DOC_PATH[0], PLAN_DOC_PATH[1]),
-        {
-          data,
-          updatedAt: serverTimestamp(),
-          title: '《合奏 Ensemble》流程安排',
-          schemaVersion: STORAGE_KEY,
-        },
-        { merge: true },
-      );
-      isDirtyRef.current = false;
-      setIsDirty(false);
-      setSyncStatus('synced');
-      setSyncMessage('已保存，其他人会实时更新');
-      setIsEditing(false);
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, PLAN_DOC_PATH.join('/'));
-      setSyncStatus('error');
-      setSyncMessage('保存失败，请检查 Firebase 权限');
-    }
+    window.location.href = '/admin';
   };
 
   const copyShareLink = async () => {
@@ -598,18 +713,69 @@ function App() {
     URL.revokeObjectURL(url);
   };
 
+  if (isAdminRoute && isCheckingAdmin) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-[#f8f7ff] px-4 text-slate-900">
+        <div className="rounded-[28px] border border-violet-100 bg-white/85 px-6 py-5 text-sm font-bold text-slate-600 shadow-xl shadow-blue-950/5">
+          正在检查管理登录状态...
+        </div>
+      </div>
+    );
+  }
+
+  if (isAdminRoute && !isAdminAuthenticated) {
+    return (
+      <div className="relative grid min-h-screen place-items-center overflow-hidden bg-[#f8f7ff] px-4 text-slate-900">
+        <DecorativeBackground />
+        <form onSubmit={loginAdmin} className="relative z-10 w-full max-w-md rounded-[28px] border border-violet-100 bg-white/90 p-6 shadow-xl shadow-blue-950/10">
+          <div className="mb-6 flex items-center gap-3">
+            <div className="grid h-12 w-12 place-items-center rounded-2xl bg-blue-950 text-white">
+              <LockKeyhole className="h-6 w-6" />
+            </div>
+            <div>
+              <p className="font-mono text-xs font-black uppercase tracking-[0.24em] text-violet-600">Admin</p>
+              <h1 className="text-2xl font-black text-blue-950">管理后台登录</h1>
+            </div>
+          </div>
+          <label className="block">
+            <span className="label">共享管理密码</span>
+            <input
+              className="field"
+              type="password"
+              value={adminPassword}
+              autoFocus
+              onChange={(event) => setAdminPassword(event.target.value)}
+              placeholder="输入 ADMIN_PASSWORD"
+            />
+          </label>
+          {adminError && <p className="mt-3 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-700">{adminError}</p>}
+          <button className="action-btn mt-5 w-full justify-center bg-blue-950 text-white hover:bg-blue-900" disabled={isLoggingIn}>
+            <LockKeyhole className="h-4 w-4" />
+            {isLoggingIn ? '正在登录' : '进入后台'}
+          </button>
+          <a className="mt-4 block text-center text-sm font-bold text-violet-700 hover:text-blue-950" href="/">
+            返回展示页面
+          </a>
+        </form>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen overflow-x-hidden bg-[#f8f7ff] text-slate-900">
       <DecorativeBackground />
       <Header
         isEditing={isEditing}
+        isAdminRoute={isAdminRoute}
+        isAdminAuthenticated={isAdminAuthenticated}
         isDirty={isDirty}
         syncStatus={syncStatus}
         syncMessage={syncMessage}
         lastSavedAt={lastSavedAt}
-        onEdit={() => setIsEditing(true)}
+        onEdit={enterAdmin}
         onView={() => setIsEditing(false)}
         onSave={saveToCloud}
+        onLogout={logoutAdmin}
         onShare={copyShareLink}
         onReset={resetAll}
         onExport={exportJson}
@@ -669,6 +835,8 @@ function DecorativeBackground() {
 
 function Header({
   isEditing,
+  isAdminRoute,
+  isAdminAuthenticated,
   isDirty,
   syncStatus,
   syncMessage,
@@ -676,6 +844,7 @@ function Header({
   onEdit,
   onView,
   onSave,
+  onLogout,
   onShare,
   progress,
   onReset,
@@ -683,6 +852,8 @@ function Header({
   onPrint,
 }: {
   isEditing: boolean;
+  isAdminRoute: boolean;
+  isAdminAuthenticated: boolean;
   isDirty: boolean;
   syncStatus: SyncStatus;
   syncMessage: string;
@@ -691,6 +862,7 @@ function Header({
   onEdit: () => void;
   onView: () => void;
   onSave: () => void;
+  onLogout: () => void;
   onShare: () => void;
   onReset: () => void;
   onExport: () => void;
@@ -740,7 +912,13 @@ function Header({
           ) : (
             <button className="action-btn bg-blue-950 text-white hover:bg-blue-900" onClick={onEdit}>
               <Pencil className="h-4 w-4" />
-              修改
+              {isAdminRoute ? '修改' : '进入后台'}
+            </button>
+          )}
+          {isAdminRoute && isAdminAuthenticated && (
+            <button className="action-btn" onClick={onLogout}>
+              <LogOut className="h-4 w-4" />
+              退出后台
             </button>
           )}
           <button className="action-btn" onClick={onShare}>
@@ -755,10 +933,12 @@ function Header({
             <Printer className="h-4 w-4" />
             打印 / PDF
           </button>
-          <button className="action-btn text-rose-700" onClick={onReset}>
-            <RotateCcw className="h-4 w-4" />
-            重置
-          </button>
+          {isAdminRoute && isAdminAuthenticated && (
+            <button className="action-btn text-rose-700" onClick={onReset}>
+              <RotateCcw className="h-4 w-4" />
+              重置
+            </button>
+          )}
         </div>
       </div>
     </header>
