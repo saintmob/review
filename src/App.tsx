@@ -452,6 +452,11 @@ function App() {
   const hasMountedRef = useRef(false);
   const applyingRemoteRef = useRef(false);
   const isDirtyRef = useRef(false);
+  const isEditingRef = useRef(false);
+
+  useEffect(() => {
+    isEditingRef.current = isEditing;
+  }, [isEditing]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
@@ -505,9 +510,9 @@ function App() {
           return;
         }
 
-        if (isDirtyRef.current) {
+        if (isDirtyRef.current || isEditingRef.current) {
           setSyncStatus('remote-pending');
-          setSyncMessage('云端有更新，保存或退出编辑后再同步');
+          setSyncMessage('编辑中已暂停接收云端覆盖');
           return;
         }
 
@@ -1236,7 +1241,7 @@ function GroupedTasks({
             <div className="space-y-1.5">
               {groupEntries.map(({ task, index }) => (
                 <TaskRow
-                  key={`${task}-${index}`}
+                  key={`task-${index}`}
                   task={task}
                   group={group}
                   compact={compact}
