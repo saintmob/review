@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type FormEvent } from 'react';
+import { upload } from '@vercel/blob/client';
 import { CheckCircle2, Loader2, Play, Radio, RefreshCw, UploadCloud, UserRound, Waves } from 'lucide-react';
 
 type Reflection = {
@@ -19,6 +20,16 @@ const initialForm = {
   audioUrl: '',
   mediaType: '',
 };
+
+function sanitizeUploadName(value: string) {
+  const extension = value.includes('.') ? `.${value.split('.').pop()}` : '';
+  const baseName = value
+    .replace(/\.[^.]+$/, '')
+    .replace(/[^a-z0-9._-]+/gi, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+  return `${baseName || 'reflection'}${extension || '.bin'}`;
+}
 
 function App() {
   const isUploadPage = window.location.pathname.replace(/\/+$/, '') === '/upload';
@@ -116,21 +127,24 @@ function UploadPage() {
     setMessage('正在上传到 Vercel Blob...');
 
     try {
-      const response = await fetch('/api/upload', {
-        method: 'POST',
-        headers: {
-          'Content-Type': file.type || 'application/octet-stream',
-          'x-file-name': encodeURIComponent(file.name),
+      const blob = await upload(`reflections/${Date.now()}-${sanitizeUploadName(file.name)}`, file, {
+        access: 'public',
+        handleUploadUrl: '/api/upload',
+        contentType: file.type || 'application/octet-stream',
+        multipart: true,
+        clientPayload: JSON.stringify({
+          fileName: file.name,
+          mediaType: file.type || 'application/octet-stream',
+        }),
+        onUploadProgress: ({ percentage }) => {
+          setMessage(`正在上传到 Vercel Blob... ${Math.round(percentage)}%`);
         },
-        body: file,
       });
-      const payload = (await response.json()) as { url?: string; mediaType?: string; error?: string };
-      if (!response.ok || !payload.url) throw new Error(payload.error || '上传失败');
 
       setForm((current) => ({
         ...current,
-        audioUrl: payload.url ?? '',
-        mediaType: payload.mediaType || file.type || 'application/octet-stream',
+        audioUrl: blob.url,
+        mediaType: file.type || 'application/octet-stream',
       }));
       setUploadState('uploaded');
       setMessage('上传成功，文件 URL 已写入表单状态。');
@@ -319,8 +333,8 @@ function MediaPlayer({ reflection, featured = false }: { reflection: Reflection;
 
 function AmbientStage() {
   const traceLines = [
-    'M-30 590 C130 510 120 360 250 310 S380 200 505 250 665 470 830 350 980 310',
-    'M40 720 C190 620 285 705 382 585 510 425 610 690 790 520 930 430',
+    'M-30 590 C130 510 120 360 250 310 C380 200 505 250 665 470 C830 350 900 330 980 310',
+    'M40 720 C190 620 285 705 382 585 C510 425 610 690 790 520 C850 475 890 450 930 430',
     'M120 85 C260 170 185 300 330 330 475 380 430 505 610 535 735 566 750 430 960 365',
     'M-20 250 C110 205 180 160 255 220 340 295 455 110 555 180 675 252 720 120 920 92',
     'M25 430 L160 515 L285 475 L390 610 L520 565 L670 730 L830 690 L985 780',

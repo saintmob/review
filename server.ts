@@ -2,7 +2,7 @@ import express from "express";
 import crypto from "crypto";
 import path from "path";
 import { fileURLToPath } from "url";
-import { put } from "@vercel/blob";
+import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { createServer as createViteServer } from "vite";
 import { initializeApp, applicationDefault, cert, getApps } from "firebase-admin/app";
 import { getFirestore, FieldValue, type DocumentData, type Firestore } from "firebase-admin/firestore";
@@ -184,17 +184,6 @@ async function readPlan() {
   return snapshot.exists ? snapshot.data() : null;
 }
 
-function sanitizeFileName(value: string) {
-  const decoded = decodeURIComponent(value || "reflection-upload");
-  const extension = path.extname(decoded).slice(0, 12);
-  const baseName = path
-    .basename(decoded, extension)
-    .replace(/[^a-z0-9._-]+/gi, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 80);
-  return `${baseName || "reflection"}${extension || ".bin"}`;
-}
-
 function serializeReflection(id: string, data: DocumentData) {
   return {
     id,
@@ -284,40 +273,25 @@ async function startServer() {
     }
   });
 
-  app.post(
-    "/api/upload",
-    express.raw({ type: ["audio/*", "video/*"], limit: MAX_REFLECTION_UPLOAD_BYTES }),
-    async (req, res) => {
-      try {
-        const contentType = req.headers["content-type"] || "application/octet-stream";
-        if (!String(contentType).startsWith("audio/") && !String(contentType).startsWith("video/")) {
-          res.status(400).json({ error: "请上传音频或视频文件" });
-          return;
-        }
-
-        const body = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body || "");
-        if (!body.length) {
-          res.status(400).json({ error: "没有收到文件内容" });
-          return;
-        }
-
-        const fileName = sanitizeFileName(String(req.headers["x-file-name"] || ""));
-        const blob = await put(`reflections/${Date.now()}-${fileName}`, body, {
-          access: "public",
-          contentType: String(contentType),
+  app.post("/api/upload", async (req, res) => {
+    try {
+      const jsonResponse = await handleUpload({
+        request: req,
+        body: req.body as HandleUploadBody,
+        onBeforeGenerateToken: async () => ({
+          allowedContentTypes: ["audio/*", "video/*"],
+          maximumSizeInBytes: Number(MAX_REFLECTION_UPLOAD_BYTES),
           addRandomSuffix: true,
-        });
+        }),
+      });
 
-        res.json({
-          url: blob.url,
-          mediaType: String(contentType),
-          size: body.length,
-        });
-      } catch (error) {
-        res.status(500).json({ error: error instanceof Error ? error.message : "上传失败" });
-      }
-    },
-  );
+      res.json(jsonResponse);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "上传失败";
+      const statusCode = message.includes("BLOB_READ_WRITE_TOKEN") ? 503 : 400;
+      res.status(statusCode).json({ error: message });
+    }
+  });
 
   app.get("/api/reflections", async (req, res) => {
     const db = getAdminDb();
