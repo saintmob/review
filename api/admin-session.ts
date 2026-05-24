@@ -1,1 +1,1 @@
-export { default } from "./admin/session";
+export { default } from "./admin/session.js";
