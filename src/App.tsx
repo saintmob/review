@@ -290,9 +290,9 @@ function useReflections() {
         }
         throw new Error(payload.error || '无法读取课程总结');
       }
-      const payload = (await response.json()) as { reflections?: Reflection[] };
+      const payload = (await response.json()) as { reflections?: Reflection[]; warning?: string };
       setReflections(payload.reflections ?? []);
-      setMessage('播放列表已同步');
+      setMessage(payload.warning || '播放列表已同步');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '无法读取课程总结');
     } finally {

@@ -170,7 +170,8 @@ function getAdminDb(): Firestore | null {
       });
     }
 
-    return getFirestore();
+    const databaseId = process.env.FIREBASE_DATABASE_ID || process.env.VITE_FIREBASE_DATABASE_ID;
+    return databaseId ? getFirestore(databaseId) : getFirestore();
   } catch (error) {
     console.warn("Firebase Admin is not configured; API persistence is unavailable.", error);
     return null;
@@ -296,7 +297,7 @@ async function startServer() {
   app.get("/api/reflections", async (req, res) => {
     const db = getAdminDb();
     if (!db) {
-      res.status(503).json({ error: "Firebase Admin is not configured" });
+      res.json({ reflections: [], warning: "Firebase Admin is not configured" });
       return;
     }
 
@@ -304,7 +305,11 @@ async function startServer() {
       const snapshot = await db.collection(REFLECTIONS_COLLECTION).orderBy("timestamp", "desc").limit(120).get();
       res.json({ reflections: snapshot.docs.map((doc) => serializeReflection(doc.id, doc.data())) });
     } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : "服务器错误" });
+      console.error("Failed to list reflections", error);
+      res.json({
+        reflections: [],
+        warning: error instanceof Error ? error.message : "无法读取课程总结",
+      });
     }
   });
 

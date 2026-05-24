@@ -30,14 +30,25 @@ function serializeReflection(id: string, data: DocumentData) {
 async function listReflections(res: VercelResponse) {
   const db = getAdminDb();
   if (!db) {
-    res.status(503).json({ error: "Firebase Admin is not configured" });
+    res.status(200).json({
+      reflections: [],
+      warning: "Firebase Admin is not configured",
+    });
     return;
   }
 
-  const snapshot = await db.collection(REFLECTIONS_COLLECTION).orderBy("timestamp", "desc").limit(120).get();
-  res.status(200).json({
-    reflections: snapshot.docs.map((doc) => serializeReflection(doc.id, doc.data())),
-  });
+  try {
+    const snapshot = await db.collection(REFLECTIONS_COLLECTION).orderBy("timestamp", "desc").limit(120).get();
+    res.status(200).json({
+      reflections: snapshot.docs.map((doc) => serializeReflection(doc.id, doc.data())),
+    });
+  } catch (error) {
+    console.error("Failed to list reflections", error);
+    res.status(200).json({
+      reflections: [],
+      warning: error instanceof Error ? error.message : "无法读取课程总结",
+    });
+  }
 }
 
 async function createReflection(input: ReflectionInput, res: VercelResponse) {

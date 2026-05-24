@@ -174,6 +174,12 @@ export function getAdminDb(): Firestore | null {
       console.log("✅ [FIREBASE DEBUG] Firebase Admin 已初始化，复用现有实例");
     }
 
+    const databaseId = process.env.FIREBASE_DATABASE_ID || process.env.VITE_FIREBASE_DATABASE_ID;
+    if (databaseId) {
+      console.log("   Firestore databaseId:", databaseId);
+      return getFirestore(databaseId);
+    }
+
     return getFirestore();
   } catch (error) {
     console.error("❌ [FIREBASE DEBUG] Firebase Admin 初始化失败:", error);
