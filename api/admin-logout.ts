@@ -1,1 +1,1 @@
-export { default } from "./admin/logout";
+export { default } from "./admin/logout.js";
