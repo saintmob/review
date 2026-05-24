@@ -21,43 +21,90 @@ const initialForm = {
 };
 
 function App() {
+  const isUploadPage = window.location.pathname.replace(/\/+$/, '') === '/upload';
+
+  return (
+    <main className="app">
+      <AmbientStage />
+      {isUploadPage ? <UploadPage /> : <PlaybackPage />}
+    </main>
+  );
+}
+
+function PlaybackPage() {
+  const { reflections, latestReflection, isLoading, message, loadReflections } = useReflections();
+
+  return (
+    <>
+      <section className="playback-hero page-fade">
+        <div className="hero-copy">
+          <div className="signal-pills" aria-hidden="true">
+            <span>Course Reflection</span>
+            <span>Playback Wall</span>
+            <span>Firestore Archive</span>
+          </div>
+          <p className="eyebrow">FINAL REVIEW CHANNEL</p>
+          <h1 className="glitch-title" data-text="回响">回响</h1>
+          <p className="subtitle">播放学生的课程总结。每一段声音与影像都会在这里成为现场的一次回响。</p>
+          <div className="loading-track" aria-hidden="true"><span /></div>
+          <div className="hero-actions">
+            <a className="primary-action" href="/upload">
+              <UploadCloud />
+              上传课程总结
+            </a>
+            <button className="ghost-action" type="button" onClick={() => void loadReflections()}>
+              <RefreshCw />
+              刷新播放列表
+            </button>
+          </div>
+          {message && <p className="terminal-line"><i /> {message}</p>}
+        </div>
+      </section>
+
+      <section className="archive-section playback-section">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">PLAYBACK WALL</p>
+            <h2>课程总结播放列表</h2>
+          </div>
+        </div>
+
+        {latestReflection && (
+          <article className="featured-player">
+            <div>
+              <p className="eyebrow">NOW PLAYING</p>
+              <h3>{latestReflection.name}</h3>
+              <p>{latestReflection.note || '这是一段来自课程现场的回响。'}</p>
+            </div>
+            <MediaPlayer reflection={latestReflection} featured />
+          </article>
+        )}
+
+        <div className="reflection-grid">
+          {isLoading && <p className="empty-state">正在同步播放列表...</p>}
+          {!isLoading && reflections.length === 0 && <p className="empty-state">还没有课程总结。等待第一段回响上传。</p>}
+          {reflections.map((reflection, index) => (
+            <article className="reflection-card" key={reflection.id}>
+              <div className="card-index">{String(index + 1).padStart(2, '0')}</div>
+              <h3>{reflection.name}</h3>
+              <p>{reflection.note || '未填写总结文字'}</p>
+              <MediaPlayer reflection={reflection} />
+            </article>
+          ))}
+        </div>
+      </section>
+    </>
+  );
+}
+
+function UploadPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [reflections, setReflections] = useState<Reflection[]>([]);
   const [form, setForm] = useState(initialForm);
   const [selectedFileName, setSelectedFileName] = useState('');
   const [uploadState, setUploadState] = useState<UploadState>('idle');
   const [submitState, setSubmitState] = useState<SubmitState>('idle');
   const [message, setMessage] = useState('');
-  const [isLoading, setIsLoading] = useState(true);
-
-  const latestReflection = reflections[0];
   const hasUpload = Boolean(form.audioUrl);
-
-  useEffect(() => {
-    void loadReflections();
-  }, []);
-
-  async function loadReflections() {
-    setIsLoading(true);
-    try {
-      const response = await fetch('/api/reflections');
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => ({}))) as { error?: string };
-        if (response.status === 503) {
-          setMessage('配置 Firebase Admin 后会显示已保存的课程总结。');
-          setReflections([]);
-          return;
-        }
-        throw new Error(payload.error || '无法读取课程总结');
-      }
-      const payload = (await response.json()) as { reflections?: Reflection[] };
-      setReflections(payload.reflections ?? []);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : '无法读取课程总结');
-    } finally {
-      setIsLoading(false);
-    }
-  }
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -108,7 +155,6 @@ function App() {
       const payload = (await response.json()) as { reflection?: Reflection; error?: string };
       if (!response.ok || !payload.reflection) throw new Error(payload.error || '保存失败');
 
-      setReflections((current) => [payload.reflection as Reflection, ...current]);
       setForm(initialForm);
       setSelectedFileName('');
       setUploadState('idle');
@@ -126,129 +172,131 @@ function App() {
     if (uploadState === 'uploaded') return 'BLOB URL READY';
     if (submitState === 'submitting') return 'WRITING FIRESTORE';
     if (submitState === 'submitted') return 'SAVED';
-    return 'WAITING FOR SIGNAL';
+    return 'WAITING FOR UPLOAD';
   }, [submitState, uploadState]);
 
   return (
-    <main className="app">
-      <AmbientStage />
+    <section className="upload-page page-fade">
+      <div className="upload-intro">
+        <div className="signal-pills" aria-hidden="true">
+          <span>Submit</span>
+          <span>Vercel Blob</span>
+          <span>Firestore</span>
+        </div>
+        <p className="eyebrow">UPLOAD CHANNEL</p>
+        <h1 className="glitch-title upload-title" data-text="上传">上传</h1>
+        <p className="subtitle">填写姓名并上传课程总结视频或音频。上传完成后，URL 会自动进入表单并随姓名一起保存。</p>
+        <div className="hero-actions">
+          <a className="ghost-action" href="/">返回播放界面</a>
+        </div>
+        <p className="terminal-line"><i /> {statusText}</p>
+      </div>
 
-      <section className="hero-grid">
-        <div className="hero-copy page-fade">
-          <div className="signal-pills" aria-hidden="true">
-            <span>Course Reflection</span>
-            <span>Vercel Blob</span>
-            <span>Firestore Archive</span>
+      <form className="upload-console" onSubmit={handleSubmit}>
+        <div className="console-heading">
+          <div>
+            <p className="eyebrow">SUBMIT A SIGNAL</p>
+            <h2>上传课程总结</h2>
           </div>
-          <p className="eyebrow">FINAL REVIEW CHANNEL</p>
-          <h1 className="glitch-title" data-text="回响">回响</h1>
-          <p className="subtitle">播放学生的课程总结，也收集每一个人上传的声音与影像。</p>
-          <div className="loading-track" aria-hidden="true"><span /></div>
-          <p className="terminal-line"><i /> {statusText}</p>
+          <UploadCloud aria-hidden="true" />
         </div>
 
-        <form className="upload-console page-fade" onSubmit={handleSubmit}>
-          <div className="console-heading">
-            <div>
-              <p className="eyebrow">SUBMIT A SIGNAL</p>
-              <h2>上传课程总结</h2>
-            </div>
-            <UploadCloud aria-hidden="true" />
-          </div>
-
-          <label className="field-label" htmlFor="student-name">学生姓名</label>
-          <div className="input-wrap">
-            <UserRound aria-hidden="true" />
-            <input
-              id="student-name"
-              value={form.name}
-              onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-              placeholder="请输入姓名"
-              required
-            />
-          </div>
-
-          <label className="field-label" htmlFor="reflection-note">一句总结</label>
-          <textarea
-            id="reflection-note"
-            value={form.note}
-            onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))}
-            placeholder="可以写下这段视频或音频想表达的内容"
-            rows={3}
-          />
-
-          <label className="upload-drop" htmlFor="reflection-file">
-            <input
-              ref={fileInputRef}
-              id="reflection-file"
-              type="file"
-              accept="audio/*,video/*"
-              onChange={handleFileChange}
-            />
-            <span className="upload-icon">
-              {uploadState === 'uploading' ? <Loader2 className="spin" /> : <UploadCloud />}
-            </span>
-            <strong>{selectedFileName || '选择视频或音频文件'}</strong>
-            <em>{hasUpload ? 'URL 已自动写入表单' : '上传后会先进入学生自己的 Vercel Blob'}</em>
-          </label>
-
-          <label className="field-label" htmlFor="audio-url">audioUrl</label>
+        <label className="field-label" htmlFor="student-name">学生姓名</label>
+        <div className="input-wrap">
+          <UserRound aria-hidden="true" />
           <input
-            id="audio-url"
-            className="url-field"
-            value={form.audioUrl}
-            onChange={(event) => setForm((current) => ({ ...current, audioUrl: event.target.value }))}
-            placeholder="上传成功后自动填入"
+            id="student-name"
+            value={form.name}
+            onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+            placeholder="请输入姓名"
             required
           />
-
-          {message && <p className={`form-message ${uploadState === 'error' || submitState === 'error' ? 'is-error' : ''}`}>{message}</p>}
-
-          <button className="primary-action" type="submit" disabled={!form.name.trim() || !hasUpload || submitState === 'submitting'}>
-            {submitState === 'submitting' ? <Loader2 className="spin" /> : <CheckCircle2 />}
-            保存到 Firestore
-          </button>
-        </form>
-      </section>
-
-      <section className="archive-section">
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">PLAYBACK WALL</p>
-            <h2>课程总结播放列表</h2>
-          </div>
-          <button className="ghost-action" type="button" onClick={() => void loadReflections()}>
-            <RefreshCw />
-            刷新
-          </button>
         </div>
 
-        {latestReflection && (
-          <article className="featured-player">
-            <div>
-              <p className="eyebrow">NOW PLAYING</p>
-              <h3>{latestReflection.name}</h3>
-              <p>{latestReflection.note || '这是一段来自课程现场的回响。'}</p>
-            </div>
-            <MediaPlayer reflection={latestReflection} featured />
-          </article>
-        )}
+        <label className="field-label" htmlFor="reflection-note">一句总结</label>
+        <textarea
+          id="reflection-note"
+          value={form.note}
+          onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))}
+          placeholder="可以写下这段视频或音频想表达的内容"
+          rows={3}
+        />
 
-        <div className="reflection-grid">
-          {isLoading && <p className="empty-state">正在同步播放列表...</p>}
-          {!isLoading && reflections.length === 0 && <p className="empty-state">还没有课程总结。等待第一段回响上传。</p>}
-          {reflections.map((reflection, index) => (
-            <article className="reflection-card" key={reflection.id}>
-              <div className="card-index">{String(index + 1).padStart(2, '0')}</div>
-              <h3>{reflection.name}</h3>
-              <p>{reflection.note || '未填写总结文字'}</p>
-              <MediaPlayer reflection={reflection} />
-            </article>
-          ))}
-        </div>
-      </section>
-    </main>
+        <label className="upload-drop" htmlFor="reflection-file">
+          <input
+            ref={fileInputRef}
+            id="reflection-file"
+            type="file"
+            accept="audio/*,video/*"
+            onChange={handleFileChange}
+          />
+          <span className="upload-icon">
+            {uploadState === 'uploading' ? <Loader2 className="spin" /> : <UploadCloud />}
+          </span>
+          <strong>{selectedFileName || '选择视频或音频文件'}</strong>
+          <em>{hasUpload ? 'URL 已自动写入表单' : '上传后会先进入学生自己的 Vercel Blob'}</em>
+        </label>
+
+        <label className="field-label" htmlFor="audio-url">audioUrl</label>
+        <input
+          id="audio-url"
+          className="url-field"
+          value={form.audioUrl}
+          onChange={(event) => setForm((current) => ({ ...current, audioUrl: event.target.value }))}
+          placeholder="上传成功后自动填入"
+          required
+        />
+
+        {message && <p className={`form-message ${uploadState === 'error' || submitState === 'error' ? 'is-error' : ''}`}>{message}</p>}
+
+        <button className="primary-action" type="submit" disabled={!form.name.trim() || !hasUpload || submitState === 'submitting'}>
+          {submitState === 'submitting' ? <Loader2 className="spin" /> : <CheckCircle2 />}
+          保存到 Firestore
+        </button>
+      </form>
+    </section>
   );
+}
+
+function useReflections() {
+  const [reflections, setReflections] = useState<Reflection[]>([]);
+  const [message, setMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+
+  async function loadReflections() {
+    setIsLoading(true);
+    try {
+      const response = await fetch('/api/reflections');
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { error?: string };
+        if (response.status === 503) {
+          setMessage('配置 Firebase Admin 后会显示已保存的课程总结。');
+          setReflections([]);
+          return;
+        }
+        throw new Error(payload.error || '无法读取课程总结');
+      }
+      const payload = (await response.json()) as { reflections?: Reflection[] };
+      setReflections(payload.reflections ?? []);
+      setMessage('播放列表已同步');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : '无法读取课程总结');
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadReflections();
+  }, []);
+
+  return {
+    reflections,
+    latestReflection: reflections[0],
+    isLoading,
+    message,
+    loadReflections,
+  };
 }
 
 function MediaPlayer({ reflection, featured = false }: { reflection: Reflection; featured?: boolean }) {
