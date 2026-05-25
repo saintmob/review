@@ -35,12 +35,13 @@ https://show-plan-event-backend.liucheng-show-plan.workers.dev
 
 - 公开页直接跨域访问活动后端，不再依赖旧 Firestore reflection 模型。
 - 上传页提交时调用 `POST /api/students`。
-- 作品封面改为本地文件选择，提交时会直接写入 `works.coverUrl`，不再要求填写图片链接。
+- 作品封面改为本地文件选择，提交时先上传到 Firebase Storage，再把公开图片链接写入 `works.coverUrl`，不再要求填写图片链接。
 - 录制视频仍使用：
   1. `POST /api/uploads/init`
   2. 浏览器 `PUT uploadUrl`
   3. `POST /api/uploads/complete`
 - 上传完成后的 `publicUrl` 会自动写入 `videoSummaryUrl`。
+- 本地封面上传需要配置 `FIREBASE_SERVICE_ACCOUNT_JSON` 和 `FIREBASE_STORAGE_BUCKET`。
 
 ## 备注
 

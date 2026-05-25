@@ -39,6 +39,13 @@ type UploadInitResponse = {
   expiresAt?: string;
 };
 
+type CoverUploadResponse = {
+  ok?: boolean;
+  publicUrl: string;
+  objectKey: string;
+  fileName: string;
+};
+
 type UploadState = 'idle' | 'uploading' | 'uploaded' | 'error';
 type SubmitState = 'idle' | 'submitting' | 'submitted' | 'error';
 type RecordingState = 'idle' | 'camera-ready' | 'recording' | 'recorded' | 'error';
@@ -75,6 +82,10 @@ function createInitialWorkSlots() {
 
 function buildApiUrl(path: string) {
   return `${eventApiBase}${path.startsWith('/') ? path : `/${path}`}`;
+}
+
+function buildLocalApiUrl(path: string) {
+  return `${window.location.origin}${path.startsWith('/') ? path : `/${path}`}`;
 }
 
 function sanitizeUploadName(value: string) {
@@ -145,6 +156,19 @@ async function readCoverImageDataUrl(file: File) {
   }
 }
 
+async function uploadCoverImage(file: File, workIndex: number) {
+  const dataUrl = await readCoverImageDataUrl(file);
+  return localApi<CoverUploadResponse>('/api/uploads/cover', {
+    method: 'POST',
+    body: {
+      fileName: sanitizeUploadName(file.name || `cover-${workIndex + 1}.jpg`),
+      contentType: 'image/jpeg',
+      dataUrl,
+      workIndex: workIndex + 1,
+    },
+  });
+}
+
 function getRecorderMimeType() {
   const candidates = [
     'video/webm;codecs=vp9,opus',
@@ -167,6 +191,21 @@ async function readJsonResponse<T>(response: Response): Promise<T> {
 
 async function api<T>(path: string, options: { method?: string; body?: unknown } = {}) {
   const response = await fetch(buildApiUrl(path), {
+    method: options.method ?? 'GET',
+    headers: options.body ? { 'Content-Type': 'application/json' } : undefined,
+    body: options.body ? JSON.stringify(options.body) : undefined,
+  });
+  const payload = await readJsonResponse<T & { error?: string }>(response);
+
+  if (!response.ok) {
+    throw new Error(payload.error || `请求失败：HTTP ${response.status}`);
+  }
+
+  return payload;
+}
+
+async function localApi<T>(path: string, options: { method?: string; body?: unknown } = {}) {
+  const response = await fetch(buildLocalApiUrl(path), {
     method: options.method ?? 'GET',
     headers: options.body ? { 'Content-Type': 'application/json' } : undefined,
     body: options.body ? JSON.stringify(options.body) : undefined,
@@ -269,7 +308,7 @@ function getUploadErrorMessage(error: unknown) {
   return message;
 }
 
-async function buildWorksPayload(workSlots: WorkSlotState[]) {
+async function buildWorksPayload(workSlots: WorkSlotState[], onStatus?: (message: string) => void) {
   const normalized: Array<{ workUrl: string; coverUrl: string }> = [];
 
   for (const [index, slot] of workSlots.entries()) {
@@ -290,9 +329,12 @@ async function buildWorksPayload(workSlots: WorkSlotState[]) {
       throw new Error(`作品 ${index + 1} 需要从电脑本地上传封面图片。`);
     }
 
+    onStatus?.(`正在上传作品 ${index + 1} 的封面...`);
+    const coverUpload = await uploadCoverImage(slot.file, index);
+
     normalized.push({
       workUrl,
-      coverUrl: await readCoverImageDataUrl(slot.file),
+      coverUrl: coverUpload.publicUrl,
     });
   }
 
@@ -746,7 +788,7 @@ function UploadPage() {
       if (!form.roles.length) throw new Error('请至少选择一个工作人员职能。');
       if (!form.textSummary.trim()) throw new Error('请输入文本总结。');
       if (!isHttpsUrl(form.videoSummaryUrl.trim())) throw new Error('请提供有效的 HTTPS 视频总结链接。');
-      const works = await buildWorksPayload(workSlotsRef.current);
+      const works = await buildWorksPayload(workSlotsRef.current, (status) => setMessage(status));
 
       setMessage('正在提交到活动后端...');
       const payload = await api<{ ok?: boolean; student?: { id: string } }>('/api/students', {
