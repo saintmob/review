@@ -1,6 +1,12 @@
 # 回响
 
-课程总结播放与上传页面。`/` 是播放界面，`/upload` 是学生上传界面。学生填写姓名后开启前置摄像头录制课程总结；前端会用 canvas 把视频压缩到最高 720p，显示生成文件体积，再通过后端代理初始化 R2 上传。上传成功返回的公开 URL 会自动写入表单状态；提交表单后，姓名、说明文字、`audioUrl`、`uploadId` 和视频信息会写入 Firebase Firestore。
+`/` 现在是活动公开页，直接读取已部署活动后端的 `/api/program`、`/api/works`、`/api/summaries`。`/upload` 是学生端最小可用上传页：提交 `fullName`、多选 `roles`、`textSummary`、`videoSummaryUrl`、1-2 个作品链接和封面 URL，并保留现有前置摄像头 WebM 录制流程。
+
+默认活动后端：
+
+```text
+https://show-plan-event-backend.liucheng-show-plan.workers.dev
+```
 
 ## 本地运行
 
@@ -12,30 +18,29 @@
    ```bash
    cp .env.example .env.local
    ```
-3. 配置服务端环境变量：
+3. 如需切换后端，设置：
    ```bash
-   VAD_UPLOAD_API_BASE="https://vad-video-upload-api.saintmob.workers.dev"
-   VAD_UPLOAD_API_KEY="CHANGE_ME"
-   MAX_REFLECTION_UPLOAD_BYTES="262144000"
-   FIREBASE_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}'
-   FIREBASE_REFLECTIONS_COLLECTION="courseReflections"
-   FIREBASE_DATABASE_ID=""
+   VITE_EVENT_API_BASE="https://show-plan-event-backend.liucheng-show-plan.workers.dev"
    ```
-4. 启动：
+4. 启动开发环境：
    ```bash
    npm run dev
    ```
 
-播放界面：http://localhost:3000/
+公开页：http://localhost:3000/
 
-上传界面：http://localhost:3000/upload
+学生上传页：http://localhost:3000/upload
 
-摄像头和麦克风录制需要浏览器权限；除 `localhost` 外，部署地址必须使用 HTTPS。
+## 学生端行为
 
-## 部署说明
+- 公开页直接跨域访问活动后端，不再依赖旧 Firestore reflection 模型。
+- 上传页提交时调用 `POST /api/students`。
+- 录制视频仍使用：
+  1. `POST /api/uploads/init`
+  2. 浏览器 `PUT uploadUrl`
+  3. `POST /api/uploads/complete`
+- 上传完成后的 `publicUrl` 会自动写入 `videoSummaryUrl`。
 
-在 Vercel 项目里添加 `VAD_UPLOAD_API_BASE` 和 `VAD_UPLOAD_API_KEY`。浏览器先请求 `/api/uploads/init`，服务端带 API Key 向 Worker 申请 R2 预签名上传地址；浏览器再把压缩后的 WebM 直接 `PUT` 到该地址，完成后调用 `/api/uploads/complete` 确认上传。视频不会先经过 Vercel serverless 函数请求体，因此不会被 Vercel 4.5 MB 请求体限制拦住。
+## 备注
 
-Firestore 写入使用 Firebase Admin SDK，因此还需要在部署环境中配置 `FIREBASE_SERVICE_ACCOUNT_JSON`。默认集合名是 `courseReflections`，可通过 `FIREBASE_REFLECTIONS_COLLECTION` 修改。
-
-如果你的 Firestore 使用的不是默认 database，请同时配置 `FIREBASE_DATABASE_ID`。
+仓库里原有 `server.ts` 和 `api/*` 仍保留，便于不打断现有本地/部署方式；本次学生端已经改成前端直接访问活动后端，避免继续维护 reflection 的双套业务逻辑。

@@ -1,16 +1,27 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from 'react';
-import { Camera, CheckCircle2, Circle, Loader2, Play, Radio, RefreshCw, RotateCcw, Square, UploadCloud, UserRound, Waves } from 'lucide-react';
+import { Camera, CheckCircle2, Circle, Loader2, Play, RefreshCw, RotateCcw, Square, UploadCloud, UserRound, Waves } from 'lucide-react';
 
-type Reflection = {
+type Program = {
+  text: string;
+  updatedAt: string;
+};
+
+type Work = {
+  id?: string;
+  studentId?: string;
+  studentName?: string;
+  workIndex?: number;
+  workUrl: string;
+  coverUrl: string;
+  createdAt?: string;
+};
+
+type Summary = {
   id: string;
-  name: string;
-  audioUrl: string;
-  mediaType: string;
-  note: string;
-  timestamp: string;
-  uploadId?: string;
-  objectKey?: string;
-  sizeBytes?: number;
+  fullName: string;
+  textSummary: string;
+  videoSummaryUrl: string;
+  createdAt: string;
 };
 
 type UploadInitResponse = {
@@ -25,15 +36,30 @@ type UploadState = 'idle' | 'uploading' | 'uploaded' | 'error';
 type SubmitState = 'idle' | 'submitting' | 'submitted' | 'error';
 type RecordingState = 'idle' | 'camera-ready' | 'recording' | 'recorded' | 'error';
 
+const defaultEventApiBase = 'https://show-plan-event-backend.liucheng-show-plan.workers.dev';
+const eventApiBase = (import.meta.env.VITE_EVENT_API_BASE || defaultEventApiBase).replace(/\/+$/, '');
+const roleOptions = ['导演组', '舞台监督', '视觉设计', '音频技术', '摄影摄像', '主持串联', '场务执行', '互动设计'];
+
 const initialForm = {
-  name: '',
-  note: '',
-  audioUrl: '',
-  mediaType: '',
+  fullName: '',
+  roles: [] as string[],
+  textSummary: '',
+  videoSummaryUrl: '',
+  work1Url: '',
+  cover1Url: '',
+  work2Url: '',
+  cover2Url: '',
   uploadId: '',
   objectKey: '',
   sizeBytes: 0,
+  durationMs: 0,
+  videoWidth: 0,
+  videoHeight: 0,
 };
+
+function buildApiUrl(path: string) {
+  return `${eventApiBase}${path.startsWith('/') ? path : `/${path}`}`;
+}
 
 function sanitizeUploadName(value: string) {
   const extension = value.includes('.') ? `.${value.split('.').pop()}` : '';
@@ -48,6 +74,24 @@ function sanitizeUploadName(value: string) {
 function formatFileSize(bytes: number) {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+}
+
+function formatTimestamp(value: string) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat('zh-CN', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(date);
+}
+
+function isHttpsUrl(value: string) {
+  try {
+    return new URL(value).protocol === 'https:';
+  } catch {
+    return false;
+  }
 }
 
 function getRecorderMimeType() {
@@ -70,40 +114,42 @@ async function readJsonResponse<T>(response: Response): Promise<T> {
   }
 }
 
-async function requestUploadInit(input: {
-  filename: string;
-  contentType: string;
-  sizeBytes: number;
-  externalUserId: string;
-  metadata?: Record<string, string | number | boolean>;
-}) {
-  const response = await fetch('/api/uploads/init', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
+async function api<T>(path: string, options: { method?: string; body?: unknown } = {}) {
+  const response = await fetch(buildApiUrl(path), {
+    method: options.method ?? 'GET',
+    headers: options.body ? { 'Content-Type': 'application/json' } : undefined,
+    body: options.body ? JSON.stringify(options.body) : undefined,
   });
-  const payload = await readJsonResponse<UploadInitResponse & { error?: string }>(response);
+  const payload = await readJsonResponse<T & { error?: string }>(response);
 
-  if (!response.ok || !payload.uploadUrl || !payload.publicUrl || !payload.uploadId) {
-    throw new Error(payload.error || '无法初始化视频上传');
+  if (!response.ok) {
+    throw new Error(payload.error || `请求失败：HTTP ${response.status}`);
   }
 
   return payload;
 }
 
-async function completeUpload(uploadId: string) {
-  const response = await fetch('/api/uploads/complete', {
+async function requestUploadInit(input: {
+  filename: string;
+  contentType: string;
+  sizeBytes: number;
+  externalUserId: string;
+  durationMs?: number;
+  width?: number;
+  height?: number;
+  metadata?: Record<string, string | number | boolean>;
+}) {
+  return api<UploadInitResponse>('/api/uploads/init', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ uploadId }),
+    body: input,
   });
-  const payload = await readJsonResponse<{ ok?: boolean; error?: string; publicUrl?: string }>(response);
+}
 
-  if (!response.ok) {
-    throw new Error(payload.error || '无法确认视频上传');
-  }
-
-  return payload;
+async function completeUpload(uploadId: string) {
+  return api<{ ok?: boolean; publicUrl?: string }>('/api/uploads/complete', {
+    method: 'POST',
+    body: { uploadId },
+  });
 }
 
 function putBlobToUploadUrl(input: {
@@ -126,32 +172,42 @@ function putBlobToUploadUrl(input: {
         resolve();
         return;
       }
-      reject(new Error(`R2 上传失败：HTTP ${xhr.status}`));
+      reject(new Error(`视频上传失败：HTTP ${xhr.status}`));
     };
-    xhr.onerror = () => reject(new Error('R2 上传失败，请检查网络或跨域配置'));
+    xhr.onerror = () => reject(new Error('视频上传失败，请检查网络或跨域配置'));
     xhr.send(input.blob);
   });
 }
 
 function getUploadErrorMessage(error: unknown) {
   const message = error instanceof Error ? error.message : String(error || '上传失败');
-  if (message.includes('VAD_UPLOAD_API_KEY') || message.includes('VAD_UPLOAD_API_BASE')) {
-    return '视频上传 API 未配置。请在 Vercel 环境变量里设置 VAD_UPLOAD_API_BASE 和 VAD_UPLOAD_API_KEY。';
-  }
-  if (message.includes('not valid JSON') || message.includes('server error')) {
-    return '上传接口返回了非 JSON 错误。请检查 Vercel 部署日志和视频上传 API 配置。';
-  }
+  if (message.includes('HTTP 413')) return '视频过大，超过活动后端允许的大小限制。';
   return message;
 }
 
-function getSaveErrorMessage(error: string, reason?: string) {
-  if (reason === 'firebase-not-configured') {
-    return 'Firestore 未配置成功。请检查 Vercel 环境变量 FIREBASE_SERVICE_ACCOUNT_JSON、FIREBASE_PROJECT_ID 和 FIREBASE_DATABASE_ID。';
+function buildWorksPayload(form: typeof initialForm) {
+  const works = [
+    { index: 1, workUrl: form.work1Url.trim(), coverUrl: form.cover1Url.trim() },
+    { index: 2, workUrl: form.work2Url.trim(), coverUrl: form.cover2Url.trim() },
+  ];
+
+  const normalized: Array<{ workUrl: string; coverUrl: string }> = [];
+  for (const work of works) {
+    if (!work.workUrl && !work.coverUrl) continue;
+    if (!work.workUrl || !work.coverUrl) {
+      throw new Error(`作品 ${work.index} 需要同时填写作品链接和封面链接。`);
+    }
+    if (!isHttpsUrl(work.workUrl) || !isHttpsUrl(work.coverUrl)) {
+      throw new Error(`作品 ${work.index} 的链接必须是 HTTPS URL。`);
+    }
+    normalized.push({ workUrl: work.workUrl, coverUrl: work.coverUrl });
   }
-  if (reason === 'firestore-write-failed') {
-    return `Firestore 写入失败：${error}`;
+
+  if (!normalized.length) {
+    throw new Error('请至少填写 1 份作品链接和封面链接。');
   }
-  return error || '保存失败';
+
+  return normalized.slice(0, 2);
 }
 
 function App() {
@@ -166,29 +222,31 @@ function App() {
 }
 
 function PlaybackPage() {
-  const { reflections, latestReflection, isLoading, message, loadReflections } = useReflections();
+  const { data, isLoading, message, load } = usePublicEventData();
+  const latestSummary = data.summaries[0];
+  const programLines = data.program.text.split(/\r?\n/).filter((line) => line.trim());
 
   return (
     <>
       <section className="playback-hero page-fade">
         <div className="hero-copy">
           <div className="signal-pills" aria-hidden="true">
-            <span>Course Reflection</span>
-            <span>Playback Wall</span>
-            <span>Firestore Archive</span>
+            <span>Student Client</span>
+            <span>Public Event API</span>
+            <span>{eventApiBase.replace(/^https?:\/\//, '')}</span>
           </div>
           <p className="eyebrow">FINAL REVIEW CHANNEL</p>
           <h1 className="glitch-title" data-text="回响">回响</h1>
-          <p className="subtitle">播放学生的课程总结。每一段声音与影像都会在这里成为现场的一次回响。</p>
+          <p className="subtitle">公开页面直接读取活动后端的节目单、作品列表和课程总结，学生端录制完成后可在上传页直接提交。</p>
           <div className="loading-track" aria-hidden="true"><span /></div>
           <div className="hero-actions">
             <a className="primary-action" href="/upload">
               <UploadCloud />
-              上传课程总结
+              进入学生上传页
             </a>
-            <button className="ghost-action" type="button" onClick={() => void loadReflections()}>
+            <button className="ghost-action" type="button" onClick={() => void load()}>
               <RefreshCw />
-              刷新播放列表
+              刷新公开数据
             </button>
           </div>
           {message && <p className="terminal-line"><i /> {message}</p>}
@@ -198,33 +256,79 @@ function PlaybackPage() {
       <section className="archive-section playback-section">
         <div className="section-heading">
           <div>
-            <p className="eyebrow">PLAYBACK WALL</p>
-            <h2>课程总结播放列表</h2>
+            <p className="eyebrow">PUBLIC SNAPSHOT</p>
+            <h2>节目单、作品与总结</h2>
           </div>
         </div>
 
-        {latestReflection && (
+        {latestSummary && (
           <article className="featured-player">
             <div>
-              <p className="eyebrow">NOW PLAYING</p>
-              <h3>{latestReflection.name}</h3>
-              <p>{latestReflection.note || '这是一段来自课程现场的回响。'}</p>
+              <p className="eyebrow">LATEST SUMMARY</p>
+              <h3>{latestSummary.fullName}</h3>
+              <p>{latestSummary.textSummary || '这位同学暂未填写文本总结。'}</p>
+              <p className="meta-line">提交时间：{formatTimestamp(latestSummary.createdAt)}</p>
             </div>
-            <MediaPlayer reflection={latestReflection} featured />
+            <MediaPlayer summary={latestSummary} featured />
           </article>
         )}
 
         <div className="reflection-grid">
-          {isLoading && <p className="empty-state">正在同步播放列表...</p>}
-          {!isLoading && reflections.length === 0 && <p className="empty-state">还没有课程总结。等待第一段回响上传。</p>}
-          {reflections.map((reflection, index) => (
-            <article className="reflection-card" key={reflection.id}>
-              <div className="card-index">{String(index + 1).padStart(2, '0')}</div>
-              <h3>{reflection.name}</h3>
-              <p>{reflection.note || '未填写总结文字'}</p>
-              <MediaPlayer reflection={reflection} />
-            </article>
-          ))}
+          <article className="reflection-card">
+            <div className="card-index">01</div>
+            <h3>节目单</h3>
+            {programLines.length ? (
+              <ol className="program-list">
+                {programLines.map((line, index) => (
+                  <li key={`${line}-${index}`}>
+                    <span>{String(index + 1).padStart(2, '0')}</span>
+                    <p>{line}</p>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p>后台尚未配置节目单。</p>
+            )}
+          </article>
+
+          <article className="reflection-card">
+            <div className="card-index">02</div>
+            <h3>作品列表</h3>
+            {isLoading && !data.works.length ? (
+              <p>正在同步作品列表...</p>
+            ) : data.works.length ? (
+              <div className="work-link-list">
+                {data.works.map((work) => (
+                  <a className="work-link-card" href={work.workUrl} target="_blank" rel="noreferrer" key={work.id || `${work.studentName}-${work.workUrl}`}>
+                    <img src={work.coverUrl} alt={`${work.studentName || '同学'} 作品封面`} />
+                    <span>{work.studentName || '未命名同学'} · 作品 {work.workIndex ?? 1}</span>
+                  </a>
+                ))}
+              </div>
+            ) : (
+              <p>暂无作品数据。</p>
+            )}
+          </article>
+
+          <article className="reflection-card">
+            <div className="card-index">03</div>
+            <h3>总结列表</h3>
+            {isLoading && !data.summaries.length ? (
+              <p>正在同步课程总结...</p>
+            ) : data.summaries.length ? (
+              <div className="summary-link-list">
+                {data.summaries.map((summary) => (
+                  <div className="summary-item" key={summary.id}>
+                    <strong>{summary.fullName}</strong>
+                    <p>{summary.textSummary}</p>
+                    <a href={summary.videoSummaryUrl} target="_blank" rel="noreferrer">查看视频总结</a>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p>暂无课程总结。</p>
+            )}
+          </article>
         </div>
       </section>
     </>
@@ -233,22 +337,20 @@ function PlaybackPage() {
 
 function UploadPage() {
   const liveVideoRef = useRef<HTMLVideoElement | null>(null);
-  const previewVideoRef = useRef<HTMLVideoElement | null>(null);
   const sourceStreamRef = useRef<MediaStream | null>(null);
   const canvasStreamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const animationFrameRef = useRef<number | null>(null);
   const recordedUrlRef = useRef('');
+  const recordStartedAtRef = useRef(0);
   const [form, setForm] = useState(initialForm);
   const [uploadState, setUploadState] = useState<UploadState>('idle');
   const [submitState, setSubmitState] = useState<SubmitState>('idle');
   const [recordingState, setRecordingState] = useState<RecordingState>('idle');
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
   const [recordedUrl, setRecordedUrl] = useState('');
-  const [recordedSize, setRecordedSize] = useState(0);
   const [message, setMessage] = useState('');
-  const hasUpload = Boolean(form.audioUrl);
 
   useEffect(() => {
     return () => {
@@ -262,7 +364,9 @@ function UploadPage() {
       cancelAnimationFrame(animationFrameRef.current);
       animationFrameRef.current = null;
     }
-    recorderRef.current?.state === 'recording' && recorderRef.current.stop();
+    if (recorderRef.current?.state === 'recording') {
+      recorderRef.current.stop();
+    }
     sourceStreamRef.current?.getTracks().forEach((track) => track.stop());
     canvasStreamRef.current?.getTracks().forEach((track) => track.stop());
     sourceStreamRef.current = null;
@@ -339,6 +443,7 @@ function UploadPage() {
 
     const mimeType = getRecorderMimeType();
     chunksRef.current = [];
+    recordStartedAtRef.current = performance.now();
     const recorder = new MediaRecorder(canvasStream, {
       mimeType: mimeType || undefined,
       videoBitsPerSecond: 1_800_000,
@@ -357,13 +462,22 @@ function UploadPage() {
         if (track.kind === 'video') track.stop();
       });
       const blob = new Blob(chunksRef.current, { type: mimeType || 'video/webm' });
+      const durationMs = Math.max(0, Math.round(performance.now() - recordStartedAtRef.current));
       if (recordedUrlRef.current) URL.revokeObjectURL(recordedUrlRef.current);
       const url = URL.createObjectURL(blob);
       recordedUrlRef.current = url;
       setRecordedBlob(blob);
       setRecordedUrl(url);
-      setRecordedSize(blob.size);
-      setForm((current) => ({ ...current, audioUrl: '', mediaType: '', uploadId: '', objectKey: '', sizeBytes: 0 }));
+      setForm((current) => ({
+        ...current,
+        videoSummaryUrl: '',
+        uploadId: '',
+        objectKey: '',
+        sizeBytes: blob.size,
+        durationMs,
+        videoWidth: outputWidth,
+        videoHeight: outputHeight,
+      }));
       setUploadState('idle');
       setRecordingState('recorded');
       setMessage(`录制完成，已压缩到最高 720p，文件体积 ${formatFileSize(blob.size)}。`);
@@ -372,9 +486,9 @@ function UploadPage() {
     recorderRef.current = recorder;
     recorder.start(1000);
     setRecordedBlob(null);
-    setRecordedSize(0);
     setRecordingState('recording');
     setUploadState('idle');
+    setSubmitState('idle');
     setMessage('正在录制并压缩到 720p...');
   }
 
@@ -389,8 +503,16 @@ function UploadPage() {
     recordedUrlRef.current = '';
     setRecordedBlob(null);
     setRecordedUrl('');
-    setRecordedSize(0);
-    setForm((current) => ({ ...current, audioUrl: '', mediaType: '', uploadId: '', objectKey: '', sizeBytes: 0 }));
+    setForm((current) => ({
+      ...current,
+      videoSummaryUrl: '',
+      uploadId: '',
+      objectKey: '',
+      sizeBytes: 0,
+      durationMs: 0,
+      videoWidth: 0,
+      videoHeight: 0,
+    }));
     setUploadState('idle');
     setSubmitState('idle');
     setRecordingState(sourceStreamRef.current ? 'camera-ready' : 'idle');
@@ -403,8 +525,7 @@ function UploadPage() {
       return;
     }
 
-    const fileName = `reflection-${Date.now()}.webm`;
-    const filename = sanitizeUploadName(fileName);
+    const filename = sanitizeUploadName(`summary-${Date.now()}.webm`);
     const contentType = 'video/webm';
     setUploadState('uploading');
     setSubmitState('idle');
@@ -415,75 +536,106 @@ function UploadPage() {
         filename,
         contentType,
         sizeBytes: recordedBlob.size,
-        externalUserId: form.name.trim() || 'anonymous',
+        externalUserId: form.fullName.trim() || `student:${Date.now()}`,
+        durationMs: form.durationMs || undefined,
+        width: form.videoWidth || undefined,
+        height: form.videoHeight || undefined,
         metadata: {
-          source: 'echo-reflection',
+          source: 'review-student-client',
+          fullName: form.fullName.trim() || 'anonymous',
           originalMimeType: recordedBlob.type || 'video/webm',
         },
       });
-      setMessage('正在上传到视频存储... 0%');
+      setMessage('正在上传到活动后端视频存储... 0%');
 
       await putBlobToUploadUrl({
         uploadUrl: upload.uploadUrl,
         blob: recordedBlob,
         contentType,
         onProgress: (percentage) => {
-          setMessage(`正在上传到视频存储... ${percentage}%`);
+          setMessage(`正在上传到活动后端视频存储... ${percentage}%`);
         },
       });
       await completeUpload(upload.uploadId);
 
       setForm((current) => ({
         ...current,
-        audioUrl: upload.publicUrl,
-        mediaType: contentType,
+        videoSummaryUrl: upload.publicUrl,
         uploadId: upload.uploadId,
         objectKey: upload.objectKey,
         sizeBytes: recordedBlob.size,
       }));
       setUploadState('uploaded');
-      setMessage('上传成功，文件 URL 已写入表单状态。');
+      setMessage('上传成功，视频总结链接已写入表单。');
     } catch (error) {
       setUploadState('error');
-      setForm((current) => ({ ...current, audioUrl: '', mediaType: '', uploadId: '', objectKey: '', sizeBytes: 0 }));
+      setForm((current) => ({
+        ...current,
+        videoSummaryUrl: '',
+        uploadId: '',
+        objectKey: '',
+      }));
       setMessage(getUploadErrorMessage(error));
     }
+  }
+
+  function toggleRole(role: string) {
+    setForm((current) => ({
+      ...current,
+      roles: current.roles.includes(role) ? current.roles.filter((item) => item !== role) : [...current.roles, role],
+    }));
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitState('submitting');
-    setMessage('正在保存到 Firestore...');
 
     try {
-      const response = await fetch('/api/reflections', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
-      });
-      const payload = await readJsonResponse<{ ok?: boolean; reflection?: Reflection; error?: string; reason?: string }>(response);
-      if (!response.ok || payload.ok === false || !payload.reflection) {
-        throw new Error(getSaveErrorMessage(payload.error || '保存失败', payload.reason));
-      }
+      const works = buildWorksPayload(form);
+      if (!form.fullName.trim()) throw new Error('请输入学生姓名。');
+      if (!form.roles.length) throw new Error('请至少选择一个工作人员职能。');
+      if (!form.textSummary.trim()) throw new Error('请输入文本总结。');
+      if (!isHttpsUrl(form.videoSummaryUrl.trim())) throw new Error('请提供有效的 HTTPS 视频总结链接。');
 
+      setMessage('正在提交到活动后端...');
+      const payload = await api<{ ok?: boolean; student?: { id: string } }>('/api/students', {
+        method: 'POST',
+        body: {
+          fullName: form.fullName.trim(),
+          roles: form.roles,
+          textSummary: form.textSummary.trim(),
+          videoSummaryUrl: form.videoSummaryUrl.trim(),
+          works,
+        },
+      });
+
+      if (!payload.ok) throw new Error('提交失败');
+
+      stopCamera();
+      if (recordedUrlRef.current) {
+        URL.revokeObjectURL(recordedUrlRef.current);
+        recordedUrlRef.current = '';
+      }
+      setRecordedBlob(null);
+      setRecordedUrl('');
       setForm(initialForm);
-      resetRecording();
       setUploadState('idle');
+      setRecordingState('idle');
       setSubmitState('submitted');
-      setMessage('已保存。新的回响已经加入播放列表。');
+      setMessage('提交完成，公开页面刷新后即可看到新的总结和作品。');
     } catch (error) {
       setSubmitState('error');
-      setMessage(error instanceof Error ? error.message : '保存失败');
+      setMessage(error instanceof Error ? error.message : '提交失败');
     }
   }
 
   const statusText = useMemo(() => {
     if (recordingState === 'recording') return 'RECORDING 720P';
     if (recordingState === 'recorded') return 'RECORDING READY';
-    if (uploadState === 'uploading') return 'UPLOADING TO R2';
+    if (uploadState === 'uploading') return 'UPLOADING TO EVENT BACKEND';
     if (uploadState === 'uploaded') return 'VIDEO URL READY';
-    if (submitState === 'submitting') return 'WRITING FIRESTORE';
-    if (submitState === 'submitted') return 'SAVED';
+    if (submitState === 'submitting') return 'SUBMITTING STUDENT RECORD';
+    if (submitState === 'submitted') return 'SUBMITTED';
     return 'WAITING FOR CAMERA';
   }, [recordingState, submitState, uploadState]);
 
@@ -491,15 +643,15 @@ function UploadPage() {
     <section className="upload-page page-fade">
       <div className="upload-intro">
         <div className="signal-pills" aria-hidden="true">
-          <span>Submit</span>
-          <span>R2 Upload API</span>
-          <span>Firestore</span>
+          <span>Submit Student</span>
+          <span>Public Event API</span>
+          <span>WebM Upload</span>
         </div>
         <p className="eyebrow">UPLOAD CHANNEL</p>
         <h1 className="glitch-title upload-title" data-text="上传">上传</h1>
-        <p className="subtitle">打开前置摄像头录制课程总结。前端会压缩到最高 720p，显示文件体积后再上传。</p>
+        <p className="subtitle">填写姓名、多选职能、文本总结、1-2 个作品链接，并保留现有 WebM 录制上传流程直连活动后端。</p>
         <div className="hero-actions">
-          <a className="ghost-action" href="/">返回播放界面</a>
+          <a className="ghost-action" href="/">返回公开页面</a>
         </div>
         <p className="terminal-line"><i /> {statusText}</p>
       </div>
@@ -507,8 +659,8 @@ function UploadPage() {
       <form className="upload-console" onSubmit={handleSubmit}>
         <div className="console-heading">
           <div>
-            <p className="eyebrow">SUBMIT A SIGNAL</p>
-            <h2>录制课程总结</h2>
+            <p className="eyebrow">SUBMIT A STUDENT</p>
+            <h2>学生端最小可用表单</h2>
           </div>
           <UploadCloud aria-hidden="true" />
         </div>
@@ -518,26 +670,43 @@ function UploadPage() {
           <UserRound aria-hidden="true" />
           <input
             id="student-name"
-            value={form.name}
-            onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+            value={form.fullName}
+            onChange={(event) => setForm((current) => ({ ...current, fullName: event.target.value }))}
             placeholder="请输入姓名"
             required
           />
         </div>
 
-        <label className="field-label" htmlFor="reflection-note">一句总结</label>
+        <div className="role-field">
+          <span className="field-label">工作人员职能（可多选）</span>
+          <div className="role-chip-grid">
+            {roleOptions.map((role) => (
+              <button
+                className={form.roles.includes(role) ? 'role-chip selected' : 'role-chip'}
+                type="button"
+                key={role}
+                onClick={() => toggleRole(role)}
+              >
+                {role}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <label className="field-label" htmlFor="reflection-note">文本总结</label>
         <textarea
           id="reflection-note"
-          value={form.note}
-          onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))}
-          placeholder="可以写下这段视频或音频想表达的内容"
-          rows={3}
+          value={form.textSummary}
+          onChange={(event) => setForm((current) => ({ ...current, textSummary: event.target.value }))}
+          placeholder="写下这次课程总结的核心内容"
+          rows={4}
+          required
         />
 
         <div className="camera-recorder">
           <div className="camera-preview">
             {recordedUrl ? (
-              <video ref={previewVideoRef} src={recordedUrl} controls playsInline />
+              <video src={recordedUrl} controls playsInline />
             ) : (
               <>
                 <video ref={liveVideoRef} autoPlay muted playsInline />
@@ -549,7 +718,7 @@ function UploadPage() {
           <div className="recording-meta">
             <span>输出：最高 1280 x 720</span>
             <span>格式：WebM</span>
-            <span>体积：{recordedSize ? formatFileSize(recordedSize) : '等待录制'}</span>
+            <span>体积：{form.sizeBytes ? formatFileSize(form.sizeBytes) : '等待录制'}</span>
           </div>
 
           <div className="recorder-actions">
@@ -586,82 +755,134 @@ function UploadPage() {
           </div>
         </div>
 
-        <label className="field-label" htmlFor="audio-url">audioUrl</label>
+        <label className="field-label" htmlFor="video-summary-url">视频总结链接</label>
         <input
-          id="audio-url"
+          id="video-summary-url"
           className="url-field"
-          value={form.audioUrl}
-          onChange={(event) => setForm((current) => ({ ...current, audioUrl: event.target.value }))}
-          placeholder="上传成功后自动填入"
+          type="url"
+          value={form.videoSummaryUrl}
+          onChange={(event) => setForm((current) => ({ ...current, videoSummaryUrl: event.target.value }))}
+          placeholder="上传成功后自动填入，也可手动填写 HTTPS 链接"
           required
         />
 
+        <div className="two-column-fields">
+          <div>
+            <label className="field-label" htmlFor="work-url-1">作品链接 1</label>
+            <input
+              id="work-url-1"
+              className="url-field"
+              type="url"
+              value={form.work1Url}
+              onChange={(event) => setForm((current) => ({ ...current, work1Url: event.target.value }))}
+              placeholder="https://..."
+              required
+            />
+          </div>
+          <div>
+            <label className="field-label" htmlFor="cover-url-1">作品封面 1</label>
+            <input
+              id="cover-url-1"
+              className="url-field"
+              type="url"
+              value={form.cover1Url}
+              onChange={(event) => setForm((current) => ({ ...current, cover1Url: event.target.value }))}
+              placeholder="https://..."
+              required
+            />
+          </div>
+          <div>
+            <label className="field-label" htmlFor="work-url-2">作品链接 2</label>
+            <input
+              id="work-url-2"
+              className="url-field"
+              type="url"
+              value={form.work2Url}
+              onChange={(event) => setForm((current) => ({ ...current, work2Url: event.target.value }))}
+              placeholder="https://..."
+            />
+          </div>
+          <div>
+            <label className="field-label" htmlFor="cover-url-2">作品封面 2</label>
+            <input
+              id="cover-url-2"
+              className="url-field"
+              type="url"
+              value={form.cover2Url}
+              onChange={(event) => setForm((current) => ({ ...current, cover2Url: event.target.value }))}
+              placeholder="https://..."
+            />
+          </div>
+        </div>
+
+        <p className="form-message">默认直连活动后端：{eventApiBase}</p>
         {message && <p className={`form-message ${uploadState === 'error' || submitState === 'error' ? 'is-error' : ''}`}>{message}</p>}
 
-        <button className="primary-action" type="submit" disabled={!form.name.trim() || !hasUpload || submitState === 'submitting'}>
+        <button className="primary-action" type="submit" disabled={submitState === 'submitting'}>
           {submitState === 'submitting' ? <Loader2 className="spin" /> : <CheckCircle2 />}
-          保存到 Firestore
+          提交到活动后端
         </button>
       </form>
     </section>
   );
 }
 
-function useReflections() {
-  const [reflections, setReflections] = useState<Reflection[]>([]);
+function usePublicEventData() {
+  const [data, setData] = useState({
+    program: { text: '', updatedAt: '' } as Program,
+    works: [] as Work[],
+    summaries: [] as Summary[],
+  });
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(true);
 
-  async function loadReflections() {
+  async function load() {
     setIsLoading(true);
     try {
-      const response = await fetch('/api/reflections');
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => ({}))) as { error?: string };
-        if (response.status === 503) {
-          setMessage('配置 Firebase Admin 后会显示已保存的课程总结。');
-          setReflections([]);
-          return;
-        }
-        throw new Error(payload.error || '无法读取课程总结');
-      }
-      const payload = (await response.json()) as { reflections?: Reflection[]; warning?: string };
-      setReflections(payload.reflections ?? []);
-      setMessage(payload.warning || '播放列表已同步');
+      const [program, works, summaries] = await Promise.all([
+        api<{ program: Program }>('/api/program'),
+        api<{ works: Work[] }>('/api/works'),
+        api<{ summaries: Summary[] }>('/api/summaries'),
+      ]);
+      setData({
+        program: program.program ?? { text: '', updatedAt: '' },
+        works: works.works ?? [],
+        summaries: summaries.summaries ?? [],
+      });
+      setMessage('公开数据已同步');
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : '无法读取课程总结');
+      setMessage(error instanceof Error ? error.message : '无法读取活动公开数据');
     } finally {
       setIsLoading(false);
     }
   }
 
   useEffect(() => {
-    void loadReflections();
+    void load();
   }, []);
 
   return {
-    reflections,
-    latestReflection: reflections[0],
+    data,
     isLoading,
     message,
-    loadReflections,
+    load,
   };
 }
 
-function MediaPlayer({ reflection, featured = false }: { reflection: Reflection; featured?: boolean }) {
-  const isVideo = reflection.mediaType.startsWith('video/');
-
+function MediaPlayer({ summary, featured = false }: { summary: Summary; featured?: boolean }) {
   return (
     <div className={featured ? 'media-shell featured' : 'media-shell'}>
       <div className="media-badge">
-        {isVideo ? <Play /> : <Waves />}
-        {isVideo ? 'VIDEO' : 'AUDIO'}
+        <Play />
+        VIDEO SUMMARY
       </div>
-      {isVideo ? (
-        <video src={reflection.audioUrl} controls playsInline />
-      ) : (
-        <audio src={reflection.audioUrl} controls />
-      )}
+      <video src={summary.videoSummaryUrl} controls playsInline />
+      {!featured ? (
+        <div className="summary-card-footer">
+          <strong>{summary.fullName}</strong>
+          <span>{formatTimestamp(summary.createdAt)}</span>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -709,7 +930,7 @@ function AmbientStage() {
           } as CSSProperties}
         />
       ))}
-      <Radio className="corner-glyph" />
+      <Waves className="corner-glyph" />
     </div>
   );
 }

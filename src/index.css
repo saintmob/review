@@ -484,6 +484,52 @@ button {
   font-size: 0.78rem;
 }
 
+.role-field {
+  display: grid;
+  gap: 10px;
+}
+
+.role-chip-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.role-chip {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(118, 238, 255, 0.22);
+  padding: 0 14px;
+  color: rgba(226, 247, 255, 0.82);
+  background: rgba(3, 8, 18, 0.6);
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+
+.role-chip.selected,
+.role-chip:hover,
+.role-chip:focus-visible {
+  border-color: rgba(185, 251, 255, 0.88);
+  box-shadow: 0 0 20px rgba(90, 239, 255, 0.2);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.two-column-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.two-column-fields > div {
+  display: grid;
+  gap: 8px;
+}
+
 .input-wrap {
   display: flex;
   align-items: center;
@@ -763,6 +809,84 @@ textarea:focus {
   line-height: 1.6;
 }
 
+.meta-line {
+  margin-top: 14px;
+  color: rgba(185, 244, 255, 0.62);
+  font-size: 0.82rem;
+}
+
+.program-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.program-list li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: start;
+}
+
+.program-list li span {
+  color: rgba(126, 249, 255, 0.74);
+  font-size: 0.8rem;
+}
+
+.program-list li p {
+  min-height: auto;
+}
+
+.work-link-list,
+.summary-link-list {
+  display: grid;
+  gap: 12px;
+}
+
+.work-link-card {
+  display: grid;
+  gap: 10px;
+  color: #eef7ff;
+  text-decoration: none;
+}
+
+.work-link-card img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border: 1px solid rgba(118, 238, 255, 0.16);
+  background: #02050d;
+}
+
+.work-link-card span {
+  color: rgba(226, 247, 255, 0.8);
+  font-size: 0.82rem;
+}
+
+.summary-item {
+  display: grid;
+  gap: 6px;
+}
+
+.summary-item strong,
+.summary-card-footer strong {
+  color: #f7fcff;
+}
+
+.summary-item a {
+  color: #8ef7ff;
+  text-decoration: none;
+}
+
+.summary-item a:hover,
+.summary-item a:focus-visible,
+.work-link-card:hover span,
+.work-link-card:focus-visible span {
+  text-decoration: underline;
+}
+
 .media-shell {
   position: relative;
   min-width: 0;
@@ -800,6 +924,15 @@ video {
 
 audio {
   padding: 14px 12px 12px;
+}
+
+.summary-card-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 12px 12px;
+  color: rgba(185, 244, 255, 0.62);
+  font-size: 0.78rem;
 }
 
 .empty-state {
@@ -976,6 +1109,10 @@ audio {
 
   .upload-console {
     padding: 16px;
+  }
+
+  .two-column-fields {
+    grid-template-columns: 1fr;
   }
 
   .section-heading,
