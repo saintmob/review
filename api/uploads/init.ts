@@ -9,6 +9,10 @@ type InitResponse = {
   expiresAt?: string;
 };
 
+function isSupportedUploadContentType(contentType: string) {
+  return contentType.startsWith("video/") || contentType.startsWith("image/");
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader("Content-Type", "application/json; charset=utf-8");
 
@@ -24,12 +28,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const externalUserId = normalizeString(req.body?.externalUserId) || "anonymous";
     const sizeBytes = Number(req.body?.sizeBytes || 0);
 
-    if (contentType !== "video/webm") {
-      jsonError(res, 400, "Only video/webm recordings can be uploaded");
+    if (!isSupportedUploadContentType(contentType)) {
+      jsonError(res, 400, "Only image/* or video/* files can be uploaded");
       return;
     }
     if (!Number.isFinite(sizeBytes) || sizeBytes <= 0 || sizeBytes > MAX_UPLOAD_BYTES) {
-      jsonError(res, 400, "录制视频体积无效或超过上限");
+      jsonError(res, 400, "文件体积无效或超过上限");
       return;
     }
 
@@ -46,7 +50,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     res.status(200).json(payload);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "无法初始化视频上传";
+    const message = error instanceof Error ? error.message : "无法初始化文件上传";
     const status = message.includes("VAD_UPLOAD_API_KEY") ? 503 : 502;
     jsonError(res, status, message);
   }

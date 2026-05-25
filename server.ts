@@ -16,6 +16,10 @@ const REFLECTIONS_COLLECTION = process.env.FIREBASE_REFLECTIONS_COLLECTION || "c
 const MAX_REFLECTION_UPLOAD_BYTES = process.env.MAX_REFLECTION_UPLOAD_BYTES || `${250 * 1024 * 1024}`;
 const UPLOAD_API_BASE = (process.env.VAD_UPLOAD_API_BASE || "https://vad-video-upload-api.saintmob.workers.dev").replace(/\/+$/, "");
 
+function isSupportedUploadContentType(contentType: string) {
+  return contentType.startsWith("video/") || contentType.startsWith("image/");
+}
+
 function normalizeAdminPassword(value: unknown) {
   if (typeof value !== "string") return "";
   const trimmed = value.trim();
@@ -328,12 +332,12 @@ async function startServer() {
       const externalUserId = typeof req.body?.externalUserId === "string" ? req.body.externalUserId.trim() : "anonymous";
       const sizeBytes = Number(req.body?.sizeBytes || 0);
 
-      if (contentType !== "video/webm") {
-        res.status(400).json({ error: "Only video/webm recordings can be uploaded" });
+      if (!isSupportedUploadContentType(contentType)) {
+        res.status(400).json({ error: "Only image/* or video/* files can be uploaded" });
         return;
       }
       if (!Number.isFinite(sizeBytes) || sizeBytes <= 0 || sizeBytes > Number(MAX_REFLECTION_UPLOAD_BYTES)) {
-        res.status(400).json({ error: "录制视频体积无效或超过上限" });
+        res.status(400).json({ error: "文件体积无效或超过上限" });
         return;
       }
 
@@ -350,7 +354,7 @@ async function startServer() {
 
       res.json(payload);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "无法初始化视频上传";
+      const message = error instanceof Error ? error.message : "无法初始化文件上传";
       const statusCode = message.includes("VAD_UPLOAD_API_KEY") ? 503 : 502;
       res.status(statusCode).json({ error: message });
     }

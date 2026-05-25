@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type FormEvent } from 'react';
 import { Camera, CheckCircle2, Circle, Loader2, Play, RefreshCw, RotateCcw, Square, UploadCloud, UserRound, Waves } from 'lucide-react';
 
 type Program = {
@@ -14,6 +14,14 @@ type Work = {
   workUrl: string;
   coverUrl: string;
   createdAt?: string;
+};
+
+type WorkSlotState = {
+  file: File | null;
+  fileName: string;
+  previewUrl: string;
+  uploadedUrl: string;
+  uploadState: UploadState;
 };
 
 type Summary = {
@@ -45,10 +53,6 @@ const initialForm = {
   roles: [] as string[],
   textSummary: '',
   videoSummaryUrl: '',
-  work1Url: '',
-  cover1Url: '',
-  work2Url: '',
-  cover2Url: '',
   uploadId: '',
   objectKey: '',
   sizeBytes: 0,
@@ -56,6 +60,20 @@ const initialForm = {
   videoWidth: 0,
   videoHeight: 0,
 };
+
+function createEmptyWorkSlot(): WorkSlotState {
+  return {
+    file: null,
+    fileName: '',
+    previewUrl: '',
+    uploadedUrl: '',
+    uploadState: 'idle',
+  };
+}
+
+function createInitialWorkSlots() {
+  return [createEmptyWorkSlot(), createEmptyWorkSlot()];
+}
 
 function buildApiUrl(path: string) {
   return `${eventApiBase}${path.startsWith('/') ? path : `/${path}`}`;
@@ -92,6 +110,21 @@ function isHttpsUrl(value: string) {
   } catch {
     return false;
   }
+}
+
+function inferImageContentType(file: File) {
+  if (file.type.startsWith('image/')) {
+    return file.type;
+  }
+
+  const lowerName = file.name.toLowerCase();
+  if (lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg')) return 'image/jpeg';
+  if (lowerName.endsWith('.png')) return 'image/png';
+  if (lowerName.endsWith('.webp')) return 'image/webp';
+  if (lowerName.endsWith('.gif')) return 'image/gif';
+  if (lowerName.endsWith('.avif')) return 'image/avif';
+  if (lowerName.endsWith('.bmp')) return 'image/bmp';
+  return 'image/png';
 }
 
 function getRecorderMimeType() {
@@ -152,6 +185,39 @@ async function completeUpload(uploadId: string) {
   });
 }
 
+async function uploadFileToStorage(input: {
+  file: Blob;
+  filename: string;
+  contentType: string;
+  externalUserId: string;
+  durationMs?: number;
+  width?: number;
+  height?: number;
+  metadata?: Record<string, string | number | boolean>;
+  onProgress: (percentage: number) => void;
+}) {
+  const upload = await requestUploadInit({
+    filename: input.filename,
+    contentType: input.contentType,
+    sizeBytes: input.file.size,
+    externalUserId: input.externalUserId,
+    durationMs: input.durationMs,
+    width: input.width,
+    height: input.height,
+    metadata: input.metadata,
+  });
+
+  await putBlobToUploadUrl({
+    uploadUrl: upload.uploadUrl,
+    blob: input.file,
+    contentType: input.contentType,
+    onProgress: input.onProgress,
+  });
+  await completeUpload(upload.uploadId);
+
+  return upload;
+}
+
 function putBlobToUploadUrl(input: {
   uploadUrl: string;
   blob: Blob;
@@ -172,42 +238,34 @@ function putBlobToUploadUrl(input: {
         resolve();
         return;
       }
-      reject(new Error(`视频上传失败：HTTP ${xhr.status}`));
+      reject(new Error(`文件上传失败：HTTP ${xhr.status}`));
     };
-    xhr.onerror = () => reject(new Error('视频上传失败，请检查网络或跨域配置'));
+    xhr.onerror = () => reject(new Error('文件上传失败，请检查网络或跨域配置'));
     xhr.send(input.blob);
   });
 }
 
 function getUploadErrorMessage(error: unknown) {
   const message = error instanceof Error ? error.message : String(error || '上传失败');
-  if (message.includes('HTTP 413')) return '视频过大，超过活动后端允许的大小限制。';
+  if (message.includes('HTTP 413')) return '文件过大，超过活动后端允许的大小限制。';
   return message;
 }
 
-function buildWorksPayload(form: typeof initialForm) {
-  const works = [
-    { index: 1, workUrl: form.work1Url.trim(), coverUrl: form.cover1Url.trim() },
-    { index: 2, workUrl: form.work2Url.trim(), coverUrl: form.cover2Url.trim() },
-  ];
-
-  const normalized: Array<{ workUrl: string; coverUrl: string }> = [];
-  for (const work of works) {
-    if (!work.workUrl && !work.coverUrl) continue;
-    if (!work.workUrl || !work.coverUrl) {
-      throw new Error(`作品 ${work.index} 需要同时填写作品链接和封面链接。`);
-    }
-    if (!isHttpsUrl(work.workUrl) || !isHttpsUrl(work.coverUrl)) {
-      throw new Error(`作品 ${work.index} 的链接必须是 HTTPS URL。`);
-    }
-    normalized.push({ workUrl: work.workUrl, coverUrl: work.coverUrl });
-  }
-
+function buildWorksPayload(workUrls: string[]) {
+  const normalized = workUrls.map((value) => value.trim()).filter(Boolean);
   if (!normalized.length) {
-    throw new Error('请至少填写 1 份作品链接和封面链接。');
+    throw new Error('请至少上传 1 张作品图片。');
   }
 
-  return normalized.slice(0, 2);
+  return normalized.slice(0, 2).map((workUrl) => {
+    if (!isHttpsUrl(workUrl)) {
+      throw new Error('作品图片上传后必须生成 HTTPS 链接。');
+    }
+    return {
+      workUrl,
+      coverUrl: workUrl,
+    };
+  });
 }
 
 function App() {
@@ -344,7 +402,9 @@ function UploadPage() {
   const animationFrameRef = useRef<number | null>(null);
   const recordedUrlRef = useRef('');
   const recordStartedAtRef = useRef(0);
+  const workSlotsRef = useRef<WorkSlotState[]>(createInitialWorkSlots());
   const [form, setForm] = useState(initialForm);
+  const [workSlots, setWorkSlots] = useState(createInitialWorkSlots);
   const [uploadState, setUploadState] = useState<UploadState>('idle');
   const [submitState, setSubmitState] = useState<SubmitState>('idle');
   const [recordingState, setRecordingState] = useState<RecordingState>('idle');
@@ -353,9 +413,16 @@ function UploadPage() {
   const [message, setMessage] = useState('');
 
   useEffect(() => {
+    workSlotsRef.current = workSlots;
+  }, [workSlots]);
+
+  useEffect(() => {
     return () => {
       stopCamera();
       if (recordedUrlRef.current) URL.revokeObjectURL(recordedUrlRef.current);
+      workSlotsRef.current.forEach((slot) => {
+        if (slot.previewUrl) URL.revokeObjectURL(slot.previewUrl);
+      });
     };
   }, []);
 
@@ -372,6 +439,44 @@ function UploadPage() {
     sourceStreamRef.current = null;
     canvasStreamRef.current = null;
     if (liveVideoRef.current) liveVideoRef.current.srcObject = null;
+  }
+
+  function updateWorkSlot(index: number, updater: (current: WorkSlotState) => WorkSlotState) {
+    setWorkSlots((current) =>
+      current.map((slot, slotIndex) => {
+        if (slotIndex !== index) return slot;
+        const next = updater(slot);
+        if (next.previewUrl !== slot.previewUrl && slot.previewUrl) {
+          URL.revokeObjectURL(slot.previewUrl);
+        }
+        return next;
+      }),
+    );
+  }
+
+  function setWorkFile(index: number, file: File | null) {
+    updateWorkSlot(index, (current) => {
+      if (current.previewUrl) {
+        URL.revokeObjectURL(current.previewUrl);
+      }
+
+      return {
+        file,
+        fileName: file?.name || '',
+        previewUrl: file ? URL.createObjectURL(file) : '',
+        uploadedUrl: '',
+        uploadState: 'idle',
+      };
+    });
+  }
+
+  function clearWorkSlots() {
+    setWorkSlots((current) => {
+      current.forEach((slot) => {
+        if (slot.previewUrl) URL.revokeObjectURL(slot.previewUrl);
+      });
+      return createInitialWorkSlots();
+    });
   }
 
   async function startCamera() {
@@ -532,31 +637,24 @@ function UploadPage() {
     setMessage('正在初始化视频上传...');
 
     try {
-      const upload = await requestUploadInit({
+      const upload = await uploadFileToStorage({
+        file: recordedBlob,
         filename,
         contentType,
-        sizeBytes: recordedBlob.size,
         externalUserId: form.fullName.trim() || `student:${Date.now()}`,
         durationMs: form.durationMs || undefined,
         width: form.videoWidth || undefined,
         height: form.videoHeight || undefined,
         metadata: {
           source: 'review-student-client',
+          assetKind: 'video-summary',
           fullName: form.fullName.trim() || 'anonymous',
           originalMimeType: recordedBlob.type || 'video/webm',
         },
-      });
-      setMessage('正在上传到活动后端视频存储... 0%');
-
-      await putBlobToUploadUrl({
-        uploadUrl: upload.uploadUrl,
-        blob: recordedBlob,
-        contentType,
         onProgress: (percentage) => {
           setMessage(`正在上传到活动后端视频存储... ${percentage}%`);
         },
       });
-      await completeUpload(upload.uploadId);
 
       setForm((current) => ({
         ...current,
@@ -586,16 +684,95 @@ function UploadPage() {
     }));
   }
 
+  function handleWorkInputChange(index: number, event: ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0] ?? null;
+    if (file && !file.type.startsWith('image/')) {
+      event.currentTarget.value = '';
+      setMessage(`作品图片 ${index + 1} 只能选择图片文件。`);
+      return;
+    }
+
+    setWorkFile(index, file);
+    event.currentTarget.value = '';
+    if (file) {
+      setMessage(`已选择作品图片 ${index + 1}：${file.name}`);
+    }
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitState('submitting');
 
     try {
-      const works = buildWorksPayload(form);
       if (!form.fullName.trim()) throw new Error('请输入学生姓名。');
       if (!form.roles.length) throw new Error('请至少选择一个工作人员职能。');
       if (!form.textSummary.trim()) throw new Error('请输入文本总结。');
       if (!isHttpsUrl(form.videoSummaryUrl.trim())) throw new Error('请提供有效的 HTTPS 视频总结链接。');
+
+      const workUrls: string[] = [];
+      for (const [index, slot] of workSlots.entries()) {
+        if (slot.uploadState === 'uploaded' && slot.uploadedUrl) {
+          workUrls.push(slot.uploadedUrl);
+          continue;
+        }
+
+        if (!slot.file) {
+          continue;
+        }
+
+        const contentType = inferImageContentType(slot.file);
+        if (!contentType.startsWith('image/')) {
+          throw new Error(`作品图片 ${index + 1} 只能上传图片文件。`);
+        }
+
+        setMessage(`正在上传作品图片 ${index + 1} ...`);
+        setWorkSlots((current) =>
+          current.map((currentSlot, slotIndex) =>
+            slotIndex === index ? { ...currentSlot, uploadState: 'uploading' } : currentSlot,
+          ),
+        );
+
+        try {
+          const upload = await uploadFileToStorage({
+            file: slot.file,
+            filename: sanitizeUploadName(slot.file.name || `work-${index + 1}.png`),
+            contentType,
+            externalUserId: form.fullName.trim() || `student:${Date.now()}`,
+            metadata: {
+              source: 'review-student-client',
+              assetKind: 'work-image',
+              workIndex: index + 1,
+              fullName: form.fullName.trim() || 'anonymous',
+              originalMimeType: slot.file.type || contentType,
+            },
+            onProgress: (percentage) => {
+              setMessage(`正在上传作品图片 ${index + 1} ... ${percentage}%`);
+            },
+          });
+
+          workUrls.push(upload.publicUrl);
+          setWorkSlots((current) =>
+            current.map((currentSlot, slotIndex) =>
+              slotIndex === index
+                ? {
+                    ...currentSlot,
+                    uploadedUrl: upload.publicUrl,
+                    uploadState: 'uploaded',
+                  }
+                : currentSlot,
+            ),
+          );
+        } catch (error) {
+          setWorkSlots((current) =>
+            current.map((currentSlot, slotIndex) =>
+              slotIndex === index ? { ...currentSlot, uploadState: 'error' } : currentSlot,
+            ),
+          );
+          throw error;
+        }
+      }
+
+      const works = buildWorksPayload(workUrls);
 
       setMessage('正在提交到活动后端...');
       const payload = await api<{ ok?: boolean; student?: { id: string } }>('/api/students', {
@@ -619,6 +796,7 @@ function UploadPage() {
       setRecordedBlob(null);
       setRecordedUrl('');
       setForm(initialForm);
+      clearWorkSlots();
       setUploadState('idle');
       setRecordingState('idle');
       setSubmitState('submitted');
@@ -632,7 +810,7 @@ function UploadPage() {
   const statusText = useMemo(() => {
     if (recordingState === 'recording') return 'RECORDING 720P';
     if (recordingState === 'recorded') return 'RECORDING READY';
-    if (uploadState === 'uploading') return 'UPLOADING TO EVENT BACKEND';
+    if (uploadState === 'uploading') return 'UPLOADING MEDIA TO EVENT BACKEND';
     if (uploadState === 'uploaded') return 'VIDEO URL READY';
     if (submitState === 'submitting') return 'SUBMITTING STUDENT RECORD';
     if (submitState === 'submitted') return 'SUBMITTED';
@@ -645,11 +823,11 @@ function UploadPage() {
         <div className="signal-pills" aria-hidden="true">
           <span>Submit Student</span>
           <span>Public Event API</span>
-          <span>WebM Upload</span>
+          <span>Local Image Upload</span>
         </div>
         <p className="eyebrow">UPLOAD CHANNEL</p>
         <h1 className="glitch-title upload-title" data-text="上传">上传</h1>
-        <p className="subtitle">填写姓名、多选职能、文本总结、1-2 个作品链接，并保留现有 WebM 录制上传流程直连活动后端。</p>
+        <p className="subtitle">填写姓名、多选职能、文本总结、1-2 张本地作品图片，并保留现有 WebM 录制上传流程直连活动后端。</p>
         <div className="hero-actions">
           <a className="ghost-action" href="/">返回公开页面</a>
         </div>
@@ -766,53 +944,54 @@ function UploadPage() {
           required
         />
 
-        <div className="two-column-fields">
-          <div>
-            <label className="field-label" htmlFor="work-url-1">作品链接 1</label>
-            <input
-              id="work-url-1"
-              className="url-field"
-              type="url"
-              value={form.work1Url}
-              onChange={(event) => setForm((current) => ({ ...current, work1Url: event.target.value }))}
-              placeholder="https://..."
-              required
-            />
-          </div>
-          <div>
-            <label className="field-label" htmlFor="cover-url-1">作品封面 1</label>
-            <input
-              id="cover-url-1"
-              className="url-field"
-              type="url"
-              value={form.cover1Url}
-              onChange={(event) => setForm((current) => ({ ...current, cover1Url: event.target.value }))}
-              placeholder="https://..."
-              required
-            />
-          </div>
-          <div>
-            <label className="field-label" htmlFor="work-url-2">作品链接 2</label>
-            <input
-              id="work-url-2"
-              className="url-field"
-              type="url"
-              value={form.work2Url}
-              onChange={(event) => setForm((current) => ({ ...current, work2Url: event.target.value }))}
-              placeholder="https://..."
-            />
-          </div>
-          <div>
-            <label className="field-label" htmlFor="cover-url-2">作品封面 2</label>
-            <input
-              id="cover-url-2"
-              className="url-field"
-              type="url"
-              value={form.cover2Url}
-              onChange={(event) => setForm((current) => ({ ...current, cover2Url: event.target.value }))}
-              placeholder="https://..."
-            />
-          </div>
+        <div className="work-upload-grid">
+          {workSlots.map((slot, index) => (
+            <div className="work-upload-card" key={index}>
+              <div className="work-upload-head">
+                <label className="field-label" htmlFor={`work-image-${index}`}>作品图片 {index + 1}</label>
+                <span className={`upload-status ${slot.uploadState}`}>{slot.uploadState === 'idle' && slot.file ? '等待上传' : slot.uploadState === 'uploading' ? '上传中' : slot.uploadState === 'uploaded' ? '已上传' : slot.uploadState === 'error' ? '上传失败' : '未选择'}</span>
+              </div>
+              <label className={slot.previewUrl ? 'upload-drop work-upload-drop has-preview' : 'upload-drop work-upload-drop'} htmlFor={`work-image-${index}`}>
+                <input
+                  id={`work-image-${index}`}
+                  type="file"
+                  accept="image/*"
+                  onChange={(event) => handleWorkInputChange(index, event)}
+                />
+                {slot.previewUrl ? (
+                  <>
+                    <img className="work-upload-preview" src={slot.previewUrl} alt={`作品图片 ${index + 1} 预览`} />
+                    <strong>{slot.fileName}</strong>
+                    <em>{slot.uploadState === 'uploaded' ? '已上传到活动后端，提交时会自动写入作品链接。' : '本地图片已选中，提交时会自动上传。'}</em>
+                  </>
+                ) : (
+                  <>
+                    <span className="upload-icon" aria-hidden="true">
+                      <UploadCloud />
+                    </span>
+                    <strong>点击选择本地图片</strong>
+                    <em>支持 JPG / PNG / WebP / GIF，提交后会自动转为公开链接。</em>
+                  </>
+                )}
+              </label>
+              <div className="work-upload-actions">
+                <p className="form-message">
+                  {slot.uploadState === 'uploaded' && slot.uploadedUrl
+                    ? '已上传，可继续编辑其他字段后直接提交。'
+                    : slot.uploadState === 'uploading'
+                      ? '图片正在上传到活动后端。'
+                      : slot.fileName
+                        ? `已选择：${slot.fileName}`
+                        : '尚未选择图片。'}
+                </p>
+                {slot.file ? (
+                  <button className="ghost-action work-clear-button" type="button" onClick={() => setWorkFile(index, null)}>
+                    清除图片
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ))}
         </div>
 
         <p className="form-message">默认直连活动后端：{eventApiBase}</p>

@@ -1,6 +1,6 @@
 # 回响
 
-`/` 现在是活动公开页，直接读取已部署活动后端的 `/api/program`、`/api/works`、`/api/summaries`。`/upload` 是学生端最小可用上传页：提交 `fullName`、多选 `roles`、`textSummary`、`videoSummaryUrl`、1-2 个作品链接和封面 URL，并保留现有前置摄像头 WebM 录制流程。
+`/` 现在是活动公开页，直接读取已部署活动后端的 `/api/program`、`/api/works`、`/api/summaries`。`/upload` 是学生端最小可用上传页：提交 `fullName`、多选 `roles`、`textSummary`、`videoSummaryUrl`、1-2 张本地作品图片，并保留现有前置摄像头 WebM 录制流程。
 
 默认活动后端：
 
@@ -35,6 +35,7 @@ https://show-plan-event-backend.liucheng-show-plan.workers.dev
 
 - 公开页直接跨域访问活动后端，不再依赖旧 Firestore reflection 模型。
 - 上传页提交时调用 `POST /api/students`。
+- 作品图片会先通过本地文件选择上传到活动后端，再把生成的公开链接写入 `works`。
 - 录制视频仍使用：
   1. `POST /api/uploads/init`
   2. 浏览器 `PUT uploadUrl`
