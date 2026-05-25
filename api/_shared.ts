@@ -2,6 +2,7 @@ import crypto from "crypto";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { initializeApp, applicationDefault, cert, getApps } from "firebase-admin/app";
 import { getFirestore, type Firestore } from "firebase-admin/firestore";
+import { getStorage } from "firebase-admin/storage";
 
 export const PLAN_DOC_PATH = ["showPlans", "ensemble-flow"] as const;
 export const STORAGE_KEY = "ensemble-field-manual-v5";
@@ -29,7 +30,52 @@ function getStorageBucketName(projectId?: string, serviceAccount?: { storage_buc
     serviceAccount?.storage_bucket ||
     "";
   if (configured.trim()) return configured.trim();
-  return projectId ? `${projectId}.appspot.com` : "";
+  if (!projectId) return "";
+  return `${projectId}.firebasestorage.app`;
+}
+
+function getStorageBucketCandidates(projectId?: string, serviceAccount?: { storage_bucket?: string }) {
+  const candidates = [
+    process.env.FIREBASE_STORAGE_BUCKET,
+    process.env.VITE_FIREBASE_STORAGE_BUCKET,
+    serviceAccount?.storage_bucket,
+  ]
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .map((value) => value.trim());
+
+  if (projectId) {
+    candidates.push(`${projectId}.firebasestorage.app`);
+    candidates.push(`${projectId}.appspot.com`);
+  }
+
+  return Array.from(new Set(candidates));
+}
+
+export async function resolveExistingStorageBucketName(projectId?: string, serviceAccount?: { storage_bucket?: string }) {
+  const candidates = getStorageBucketCandidates(projectId, serviceAccount);
+  if (!getApps().length) return candidates[0] || "";
+
+  const app = getApps()[0];
+  const appBucket = typeof app.options.storageBucket === "string" ? app.options.storageBucket.trim() : "";
+  if (appBucket) candidates.push(appBucket);
+
+  const appProjectId = typeof app.options.projectId === "string" ? app.options.projectId.trim() : "";
+  if (appProjectId) {
+    candidates.push(`${appProjectId}.firebasestorage.app`);
+    candidates.push(`${appProjectId}.appspot.com`);
+  }
+
+  for (const candidate of Array.from(new Set(candidates.filter(Boolean)))) {
+    try {
+      const bucket = getStorage().bucket(candidate);
+      const [exists] = await bucket.exists();
+      if (exists) return candidate;
+    } catch {
+      continue;
+    }
+  }
+
+  return "";
 }
 
 function getSessionSecret() {

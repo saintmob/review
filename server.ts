@@ -7,6 +7,7 @@ import { initializeApp, applicationDefault, cert, getApps } from "firebase-admin
 import { getFirestore, FieldValue, type DocumentData, type Firestore } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
 import "dotenv/config";
+import { resolveExistingStorageBucketName } from "./api/_shared.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -163,7 +164,7 @@ function getStorageBucketName(projectId?: string, serviceAccount?: { storage_buc
     serviceAccount?.storage_bucket ||
     "";
   if (configured.trim()) return configured.trim();
-  return projectId ? `${projectId}.appspot.com` : "";
+  return projectId ? `${projectId}.firebasestorage.app` : "";
 }
 
 function getAdminDb(): Firestore | null {
@@ -286,8 +287,11 @@ async function uploadCoverImageToStorage(input: { fileName: string; dataUrl: str
     throw new Error("Invalid cover image data");
   }
 
-  const bucketName = process.env.FIREBASE_STORAGE_BUCKET || process.env.VITE_FIREBASE_STORAGE_BUCKET || "";
-  const bucket = bucketName ? getStorage().bucket(bucketName) : getStorage().bucket();
+  const bucketName = await resolveExistingStorageBucketName();
+  if (!bucketName) {
+    throw new Error("Firebase storage bucket does not exist");
+  }
+  const bucket = getStorage().bucket(bucketName);
   const objectKey = buildCoverObjectKey(input.fileName, input.workIndex);
   const token = crypto.randomUUID();
   const file = bucket.file(objectKey);

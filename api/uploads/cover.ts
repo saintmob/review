@@ -1,9 +1,8 @@
 import crypto from "node:crypto";
 import path from "node:path";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { getApp, getApps } from "firebase-admin/app";
 import { getStorage } from "firebase-admin/storage";
-import { getAdminDb, methodNotAllowed } from "../_shared.js";
+import { getAdminDb, methodNotAllowed, resolveExistingStorageBucketName } from "../_shared.js";
 
 type CoverUploadResponse = {
   ok?: boolean;
@@ -34,33 +33,17 @@ function buildCoverObjectKey(fileName: string, workIndex: number) {
   return `student-covers/${new Date().toISOString().slice(0, 10)}/${Date.now()}-${workIndex}-${crypto.randomUUID()}${ext}`;
 }
 
-function getEffectiveBucketName() {
-  const envBucket =
-    process.env.FIREBASE_STORAGE_BUCKET ||
-    process.env.VITE_FIREBASE_STORAGE_BUCKET ||
-    "";
-  if (envBucket.trim()) return envBucket.trim();
-
-  if (!getApps().length) return "";
-  const app = getApp();
-  const appBucket = typeof app.options.storageBucket === "string" ? app.options.storageBucket.trim() : "";
-  if (appBucket) return appBucket;
-
-  const projectId = typeof app.options.projectId === "string" ? app.options.projectId.trim() : "";
-  return projectId ? `${projectId}.appspot.com` : "";
-}
-
 async function uploadCoverImageToStorage(input: { fileName: string; dataUrl: string; workIndex: number }) {
   const parsed = parseDataUrl(input.dataUrl);
   if (!parsed) {
     throw new Error("Invalid cover image data");
   }
 
-  const bucketName = getEffectiveBucketName();
+  const bucketName = await resolveExistingStorageBucketName();
   if (!bucketName) {
-    throw new Error("Firebase storage bucket is not configured");
+    throw new Error("Firebase storage bucket does not exist");
   }
-  const bucket = bucketName ? getStorage().bucket(bucketName) : getStorage().bucket();
+  const bucket = getStorage().bucket(bucketName);
   const objectKey = buildCoverObjectKey(input.fileName, input.workIndex);
   const token = crypto.randomUUID();
   const file = bucket.file(objectKey);
