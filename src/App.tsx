@@ -31,6 +31,17 @@ type Summary = {
   createdAt: string;
 };
 
+type StudentRecord = {
+  id: string;
+  fullName: string;
+  roles: string[];
+  textSummary: string;
+  videoSummaryUrl: string;
+  works: Work[];
+  createdAt: string;
+  updatedAt?: string;
+};
+
 type UploadInitResponse = {
   uploadId: string;
   objectKey: string;
@@ -121,10 +132,8 @@ function isHttpsUrl(value: string) {
   }
 }
 
-function findStudentCoverUrl(summary: Summary, works: Work[]) {
-  const name = summary.fullName.trim().toLowerCase();
-  const match = works.find((work) => String(work.studentName || '').trim().toLowerCase() === name && work.coverUrl);
-  return match?.coverUrl || '';
+function getStudentPrimaryWork(student: StudentRecord) {
+  return student.works.find((work) => work.coverUrl || work.workUrl) || student.works[0] || null;
 }
 
 function loadImage(src: string) {
@@ -353,112 +362,278 @@ async function buildWorksPayload(workSlots: WorkSlotState[], onStatus?: (message
 
 function App() {
   const pathname = window.location.pathname.replace(/\/+$/, '');
-  const isUploadPage = pathname === '/upload';
-  const isVideoCarouselPage = pathname === '/videos' || pathname === '/video-carousel';
+  const isAdminPage = pathname === '/admin' || pathname === '/upload';
+  const isDisplayPage = pathname === '/display' || pathname === '/videos' || pathname === '/video-carousel';
+  const isPublicPage = pathname === '/public';
 
   return (
     <main className="app">
       <AmbientStage />
-      {isUploadPage ? <UploadPage /> : isVideoCarouselPage ? <VideoCarouselPage /> : <PlaybackPage />}
+      {isAdminPage ? <UploadPage /> : isDisplayPage ? <DisplayPage /> : isPublicPage ? <PlaybackPage /> : <LandingPage />}
     </main>
   );
 }
 
-function VideoCarouselPage() {
+function LandingPage() {
+  return (
+    <section className="landing-page page-fade">
+      <div className="landing-hero">
+        <div className="signal-pills" aria-hidden="true">
+          <span>Student Client</span>
+          <span>Public Event API</span>
+          <span>{eventApiBase.replace(/^https?:\/\//, '')}</span>
+        </div>
+        <p className="eyebrow">ENTRY CHANNEL</p>
+        <h1 className="glitch-title" data-text="回响">回响</h1>
+        <p className="subtitle">进入管理提交页填写学生信息，或进入视频展示页自动轮播播放作品、封面和总结。</p>
+        <div className="hero-actions">
+          <a className="primary-action" href="/admin">
+            <UserRound />
+            管理提交页
+          </a>
+          <a className="ghost-action" href="/display">
+            <Play />
+            视频展示页
+          </a>
+        </div>
+        <p className="terminal-line"><i /> 先提交，再展示。</p>
+      </div>
+    </section>
+  );
+}
+
+function DisplayPage() {
   const { data, isLoading, message, load } = usePublicEventData();
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [isStarted, setIsStarted] = useState(false);
+  const [trackIndex, setTrackIndex] = useState(0);
+  const [isTransitionEnabled, setIsTransitionEnabled] = useState(true);
+  const [pageMessage, setPageMessage] = useState('');
+  const videoRefs = useRef<Array<HTMLVideoElement | null>>([]);
+  const wrapTriggeredRef = useRef(false);
 
   const slides = useMemo(() => {
-    return data.summaries.map((summary) => ({
-      ...summary,
-      coverUrl: findStudentCoverUrl(summary, data.works),
-    }));
-  }, [data.summaries, data.works]);
+    return data.students.map((student) => {
+      const primaryWork = getStudentPrimaryWork(student);
+      return {
+        ...student,
+        primaryWork,
+        coverUrl: primaryWork?.coverUrl || '',
+        workUrl: primaryWork?.workUrl || '',
+        roleLabel: student.roles.length ? student.roles.join(' / ') : '岗位待补充',
+        workLabel: primaryWork ? `作品 ${primaryWork.workIndex ?? 1}` : '作品',
+      };
+    });
+  }, [data.students]);
+
+  const loopSlides = useMemo(() => {
+    if (slides.length <= 1) return slides;
+    return [...slides, slides[0]];
+  }, [slides]);
+
+  const currentLabel = slides.length ? `${Math.min(trackIndex, slides.length - 1) + 1} / ${slides.length}` : '';
+
+  useEffect(() => {
+    if (!isStarted || !slides.length) return;
+
+    const currentVideo = videoRefs.current[trackIndex];
+    videoRefs.current.forEach((video, index) => {
+      if (video && index !== trackIndex && !video.paused) {
+        video.pause();
+      }
+    });
+
+    if (!currentVideo || trackIndex >= slides.length) return;
+
+    currentVideo.currentTime = 0;
+    const playPromise = currentVideo.play();
+    if (playPromise && typeof playPromise.catch === 'function') {
+      playPromise.catch(() => {
+        setPageMessage('浏览器暂时阻止了自动播放，请重新点击开始。');
+        setIsStarted(false);
+      });
+    }
+  }, [isStarted, loopSlides.length, slides.length, trackIndex]);
 
   useEffect(() => {
     if (!slides.length) return;
-    const timer = window.setInterval(() => {
-      setCurrentIndex((current) => (current + 1) % slides.length);
-    }, 7000);
-    return () => window.clearInterval(timer);
-  }, [slides.length]);
+    if (trackIndex < slides.length) {
+      wrapTriggeredRef.current = false;
+      return;
+    }
+
+    if (trackIndex === slides.length && !wrapTriggeredRef.current) {
+      wrapTriggeredRef.current = true;
+    }
+  }, [slides.length, trackIndex]);
 
   useEffect(() => {
-    if (currentIndex >= slides.length) {
-      setCurrentIndex(0);
+    if (slides.length && trackIndex >= slides.length) {
+      setTrackIndex(0);
     }
-  }, [currentIndex, slides.length]);
+  }, [slides.length, trackIndex]);
 
-  const summary = slides[currentIndex];
-  const currentLabel = slides.length ? `${currentIndex + 1} / ${slides.length}` : '';
+  function startDisplay() {
+    if (!slides.length) return;
+    setIsStarted(true);
+    setTrackIndex(0);
+    setIsTransitionEnabled(true);
+    setPageMessage('展示已开始，视频会自动顺序播放。');
+  }
+
+  function restartDisplay() {
+    if (!slides.length) return;
+    setIsStarted(true);
+    setTrackIndex(0);
+    setIsTransitionEnabled(true);
+    setPageMessage('已重新从第一位开始播放。');
+  }
+
+  function goNext() {
+    if (!slides.length) return;
+    if (slides.length === 1) {
+      const currentVideo = videoRefs.current[0];
+      if (currentVideo) {
+        currentVideo.currentTime = 0;
+        void currentVideo.play();
+      }
+      return;
+    }
+    setTrackIndex((current) => current + 1);
+  }
+
+  function handleTrackTransitionEnd() {
+    if (!slides.length || slides.length === 1) return;
+    if (trackIndex === slides.length) {
+      setIsTransitionEnabled(false);
+      setTrackIndex(0);
+      window.requestAnimationFrame(() => {
+        setIsTransitionEnabled(true);
+        wrapTriggeredRef.current = false;
+      });
+    }
+  }
 
   return (
-    <section className="carousel-page page-fade">
-      <div className="carousel-hero">
-        <div className="hero-copy">
+    <section className="display-page page-fade">
+      <div className="display-header">
+        <div>
           <div className="signal-pills" aria-hidden="true">
-            <span>Student Client</span>
-            <span>Display</span>
+            <span>Display Mode</span>
+            <span>Auto Playlist</span>
             <span>{eventApiBase.replace(/^https?:\/\//, '')}</span>
           </div>
           <p className="eyebrow">VIDEO DISPLAY</p>
           <h1 className="glitch-title" data-text="展示">展示</h1>
-          <p className="subtitle">自动左右展示每个人的自拍视频总结，同时显示学生姓名、作品封面与职位感悟。</p>
-          <div className="hero-actions">
-            <a className="primary-action" href="/upload">
-              <UploadCloud />
-              学生上传页
-            </a>
-            <button className="ghost-action" type="button" onClick={() => void load()}>
-              <RefreshCw />
-              刷新数据
+          <p className="subtitle">点击开始后，视频将按顺序自动播放。每播完一位同学，画面会向左滑到下一位，封面与文字同步切换。</p>
+        </div>
+        <div className="display-header-actions">
+          <a className="ghost-action" href="/admin">
+            <UserRound />
+            管理提交页
+          </a>
+          <button className="ghost-action" type="button" onClick={() => void load()}>
+            <RefreshCw />
+            刷新数据
+          </button>
+          {isStarted ? (
+            <button className="primary-action" type="button" onClick={restartDisplay}>
+              <Play />
+              重新开始
             </button>
-          </div>
-          {message && <p className="terminal-line"><i /> {message}</p>}
+          ) : null}
         </div>
       </div>
 
-      <section className="carousel-shell">
-        {isLoading && !slides.length ? (
-          <div className="empty-state">正在加载视频展示数据...</div>
-        ) : slides.length ? (
-          <article className="carousel-card">
-            <div className="carousel-player">
-              <div className="media-badge">
-                <Play />
-                VIDEO SUMMARY
-              </div>
-              <video src={summary.videoSummaryUrl} controls playsInline />
-            </div>
-            <div className="carousel-details">
-              <div className="carousel-banner">
-                <strong>{summary.fullName}</strong>
-                <span>{currentLabel}</span>
-              </div>
-              {summary.coverUrl ? (
-                <img className="carousel-cover" src={summary.coverUrl} alt={`${summary.fullName} 的作品封面`} />
-              ) : (
-                <div className="carousel-cover placeholder">暂无作品封面</div>
-              )}
-              <div className="reflection-card">
-                <div className="card-index">职位感悟</div>
-                <p>{summary.textSummary || '这位同学尚未填写职位感悟。'}</p>
-                <p className="meta-line">提交时间：{formatTimestamp(summary.createdAt)}</p>
-              </div>
-              <div className="carousel-controls">
-                <button className="ghost-action" type="button" onClick={() => setCurrentIndex((current) => (current - 1 + slides.length) % slides.length)}>
-                  ← 上一个
-                </button>
-                <button className="ghost-action" type="button" onClick={() => setCurrentIndex((current) => (current + 1) % slides.length)}>
-                  下一个 →
-                </button>
-              </div>
-            </div>
-          </article>
-        ) : (
-          <div className="empty-state">暂无可展示的视频总结。</div>
-        )}
-      </section>
+      <div className="display-stage">
+        <div
+          className={isTransitionEnabled ? 'display-track is-animated' : 'display-track'}
+          style={{
+            ['--slide-count' as string]: Math.max(loopSlides.length, 1),
+            transform: `translateX(-${trackIndex * (100 / Math.max(loopSlides.length, 1))}%)`,
+          }}
+          onTransitionEnd={handleTrackTransitionEnd}
+        >
+          {loopSlides.length ? (
+            loopSlides.map((slide, index) => {
+              const isActive = index === trackIndex;
+              return (
+                <article className="display-slide" key={`${slide.id || slide.fullName}-${index}`}>
+                  <div className="display-slide-grid">
+                    <div className="display-stage-header">
+                      <div className="display-stage-topline">回响....</div>
+                      <div className="display-stage-counter">{currentLabel}</div>
+                    </div>
+
+                    <section className="display-video-panel">
+                      <div className="display-video-label">video</div>
+                      <video
+                        ref={(node) => {
+                          videoRefs.current[index] = node;
+                        }}
+                        src={slide.videoSummaryUrl}
+                        playsInline
+                        preload="metadata"
+                        controls={false}
+                        autoPlay={isStarted && isActive && index < slides.length}
+                        onEnded={goNext}
+                        onClick={() => {
+                          if (!isStarted) {
+                            startDisplay();
+                          }
+                        }}
+                      />
+                    </section>
+
+                    <aside className="display-side-panel">
+                      <div className="display-side-title">作品封面</div>
+                      {slide.coverUrl ? (
+                        <img className="display-cover" src={slide.coverUrl} alt={`${slide.fullName} 的作品封面`} />
+                      ) : (
+                        <div className="display-cover placeholder">暂无作品封面</div>
+                      )}
+                      {slide.workUrl ? (
+                        <a className="display-link" href={slide.workUrl} target="_blank" rel="noreferrer">
+                          作品网址
+                        </a>
+                      ) : (
+                        <div className="display-link">作品网址待补充</div>
+                      )}
+                      <div className="display-meta-block">
+                        <strong>{slide.fullName}</strong>
+                        <span>{slide.roleLabel}</span>
+                      </div>
+                    </aside>
+
+                    <div className="display-summary-strip">
+                      <div className="display-summary-title">感悟总结。</div>
+                      <p>{slide.textSummary || '这位同学尚未填写职位感悟。'}</p>
+                    </div>
+
+                    <div className="display-footer-note">
+                      <span>{slide.fullName}</span>
+                      <span>{slide.roleLabel}</span>
+                    </div>
+                  </div>
+                </article>
+              );
+            })
+          ) : (
+            <article className="display-slide">
+              <div className="empty-state">{isLoading ? '正在加载展示数据...' : '暂无可展示的视频总结。'}</div>
+            </article>
+          )}
+        </div>
+
+        {!isStarted ? (
+          <button className="display-start-overlay" type="button" onClick={startDisplay}>
+            <Play />
+            <strong>开始播放</strong>
+            <span>点击后将自动播放全部学生视频，并在每位结束后向左切换。</span>
+          </button>
+        ) : null}
+      </div>
+
+      {((pageMessage || message) && <p className="terminal-line display-message"><i /> {pageMessage || message}</p>)}
     </section>
   );
 }
@@ -479,16 +654,16 @@ function PlaybackPage() {
           </div>
           <p className="eyebrow">FINAL REVIEW CHANNEL</p>
           <h1 className="glitch-title" data-text="回响">回响</h1>
-          <p className="subtitle">公开页面直接读取活动后端的节目单、作品列表和课程总结，学生端录制完成后可在上传页直接提交。</p>
+          <p className="subtitle">公开页面直接读取活动后端的节目单、作品列表和课程总结，管理提交页负责录入学生信息与作品。</p>
           <div className="loading-track" aria-hidden="true"><span /></div>
           <div className="hero-actions">
-            <a className="primary-action" href="/videos">
+            <a className="primary-action" href="/display">
               <Play />
               进入视频展示页
             </a>
-            <a className="ghost-action" href="/upload">
+            <a className="ghost-action" href="/admin">
               <UploadCloud />
-              进入学生上传页
+              进入管理提交页
             </a>
             <button className="ghost-action" type="button" onClick={() => void load()}>
               <RefreshCw />
@@ -959,9 +1134,9 @@ function UploadPage() {
         </div>
         <p className="eyebrow">UPLOAD CHANNEL</p>
         <h1 className="glitch-title upload-title" data-text="上传">上传</h1>
-        <p className="subtitle">填写姓名，先上传作品，再写职位感悟，最后录制并上传视频总结。</p>
+        <p className="subtitle">填写姓名、职能、作品网页链接和本地封面，再录制并上传视频总结。</p>
         <div className="hero-actions">
-          <a className="ghost-action" href="/">返回公开页面</a>
+          <a className="ghost-action" href="/">返回入口页</a>
         </div>
         <p className="terminal-line"><i /> {statusText}</p>
       </div>
@@ -970,7 +1145,7 @@ function UploadPage() {
         <div className="console-heading">
           <div>
             <p className="eyebrow">SUBMIT A STUDENT</p>
-            <h2>学生端最小可用表单</h2>
+            <h2>管理提交页</h2>
           </div>
           <UploadCloud aria-hidden="true" />
         </div>
@@ -1148,6 +1323,7 @@ function usePublicEventData() {
     program: { text: '', updatedAt: '' } as Program,
     works: [] as Work[],
     summaries: [] as Summary[],
+    students: [] as StudentRecord[],
   });
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(true);
@@ -1155,15 +1331,17 @@ function usePublicEventData() {
   async function load() {
     setIsLoading(true);
     try {
-      const [program, works, summaries] = await Promise.all([
+      const [program, works, summaries, students] = await Promise.all([
         api<{ program: Program }>('/api/program'),
         api<{ works: Work[] }>('/api/works'),
         api<{ summaries: Summary[] }>('/api/summaries'),
+        api<{ students: StudentRecord[] }>('/api/students'),
       ]);
       setData({
         program: program.program ?? { text: '', updatedAt: '' },
         works: works.works ?? [],
         summaries: summaries.summaries ?? [],
+        students: students.students ?? [],
       });
       setMessage('公开数据已同步');
     } catch (error) {
