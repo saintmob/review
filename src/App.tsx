@@ -121,6 +121,12 @@ function isHttpsUrl(value: string) {
   }
 }
 
+function findStudentCoverUrl(summary: Summary, works: Work[]) {
+  const name = summary.fullName.trim().toLowerCase();
+  const match = works.find((work) => String(work.studentName || '').trim().toLowerCase() === name && work.coverUrl);
+  return match?.coverUrl || '';
+}
+
 function loadImage(src: string) {
   return new Promise<HTMLImageElement>((resolve, reject) => {
     const image = new Image();
@@ -346,13 +352,114 @@ async function buildWorksPayload(workSlots: WorkSlotState[], onStatus?: (message
 }
 
 function App() {
-  const isUploadPage = window.location.pathname.replace(/\/+$/, '') === '/upload';
+  const pathname = window.location.pathname.replace(/\/+$/, '');
+  const isUploadPage = pathname === '/upload';
+  const isVideoCarouselPage = pathname === '/videos' || pathname === '/video-carousel';
 
   return (
     <main className="app">
       <AmbientStage />
-      {isUploadPage ? <UploadPage /> : <PlaybackPage />}
+      {isUploadPage ? <UploadPage /> : isVideoCarouselPage ? <VideoCarouselPage /> : <PlaybackPage />}
     </main>
+  );
+}
+
+function VideoCarouselPage() {
+  const { data, isLoading, message, load } = usePublicEventData();
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  const slides = useMemo(() => {
+    return data.summaries.map((summary) => ({
+      ...summary,
+      coverUrl: findStudentCoverUrl(summary, data.works),
+    }));
+  }, [data.summaries, data.works]);
+
+  useEffect(() => {
+    if (!slides.length) return;
+    const timer = window.setInterval(() => {
+      setCurrentIndex((current) => (current + 1) % slides.length);
+    }, 7000);
+    return () => window.clearInterval(timer);
+  }, [slides.length]);
+
+  useEffect(() => {
+    if (currentIndex >= slides.length) {
+      setCurrentIndex(0);
+    }
+  }, [currentIndex, slides.length]);
+
+  const summary = slides[currentIndex];
+  const currentLabel = slides.length ? `${currentIndex + 1} / ${slides.length}` : '';
+
+  return (
+    <section className="carousel-page page-fade">
+      <div className="carousel-hero">
+        <div className="hero-copy">
+          <div className="signal-pills" aria-hidden="true">
+            <span>Student Client</span>
+            <span>Display</span>
+            <span>{eventApiBase.replace(/^https?:\/\//, '')}</span>
+          </div>
+          <p className="eyebrow">VIDEO DISPLAY</p>
+          <h1 className="glitch-title" data-text="展示">展示</h1>
+          <p className="subtitle">自动左右展示每个人的自拍视频总结，同时显示学生姓名、作品封面与职位感悟。</p>
+          <div className="hero-actions">
+            <a className="primary-action" href="/upload">
+              <UploadCloud />
+              学生上传页
+            </a>
+            <button className="ghost-action" type="button" onClick={() => void load()}>
+              <RefreshCw />
+              刷新数据
+            </button>
+          </div>
+          {message && <p className="terminal-line"><i /> {message}</p>}
+        </div>
+      </div>
+
+      <section className="carousel-shell">
+        {isLoading && !slides.length ? (
+          <div className="empty-state">正在加载视频展示数据...</div>
+        ) : slides.length ? (
+          <article className="carousel-card">
+            <div className="carousel-player">
+              <div className="media-badge">
+                <Play />
+                VIDEO SUMMARY
+              </div>
+              <video src={summary.videoSummaryUrl} controls playsInline />
+            </div>
+            <div className="carousel-details">
+              <div className="carousel-banner">
+                <strong>{summary.fullName}</strong>
+                <span>{currentLabel}</span>
+              </div>
+              {summary.coverUrl ? (
+                <img className="carousel-cover" src={summary.coverUrl} alt={`${summary.fullName} 的作品封面`} />
+              ) : (
+                <div className="carousel-cover placeholder">暂无作品封面</div>
+              )}
+              <div className="reflection-card">
+                <div className="card-index">职位感悟</div>
+                <p>{summary.textSummary || '这位同学尚未填写职位感悟。'}</p>
+                <p className="meta-line">提交时间：{formatTimestamp(summary.createdAt)}</p>
+              </div>
+              <div className="carousel-controls">
+                <button className="ghost-action" type="button" onClick={() => setCurrentIndex((current) => (current - 1 + slides.length) % slides.length)}>
+                  ← 上一个
+                </button>
+                <button className="ghost-action" type="button" onClick={() => setCurrentIndex((current) => (current + 1) % slides.length)}>
+                  下一个 →
+                </button>
+              </div>
+            </div>
+          </article>
+        ) : (
+          <div className="empty-state">暂无可展示的视频总结。</div>
+        )}
+      </section>
+    </section>
   );
 }
 
@@ -375,7 +482,11 @@ function PlaybackPage() {
           <p className="subtitle">公开页面直接读取活动后端的节目单、作品列表和课程总结，学生端录制完成后可在上传页直接提交。</p>
           <div className="loading-track" aria-hidden="true"><span /></div>
           <div className="hero-actions">
-            <a className="primary-action" href="/upload">
+            <a className="primary-action" href="/videos">
+              <Play />
+              进入视频展示页
+            </a>
+            <a className="ghost-action" href="/upload">
               <UploadCloud />
               进入学生上传页
             </a>
@@ -744,7 +855,7 @@ function UploadPage() {
         sizeBytes: recordedBlob.size,
       }));
       setUploadState('uploaded');
-      setMessage('上传成功，视频总结链接已写入表单。');
+      setMessage('上传成功，视频总结已准备好提交。');
     } catch (error) {
       setUploadState('error');
       setForm((current) => ({
@@ -786,8 +897,13 @@ function UploadPage() {
     try {
       if (!form.fullName.trim()) throw new Error('请输入学生姓名。');
       if (!form.roles.length) throw new Error('请至少选择一个工作人员职能。');
-      if (!form.textSummary.trim()) throw new Error('请输入文本总结。');
-      if (!isHttpsUrl(form.videoSummaryUrl.trim())) throw new Error('请提供有效的 HTTPS 视频总结链接。');
+      if (!form.textSummary.trim()) throw new Error('请输入职位感悟。');
+      if (recordingState !== 'recorded') throw new Error('请先拍摄视频总结。');
+      if (uploadState !== 'uploaded') {
+        setMessage('正在上传视频总结...');
+        await uploadRecording();
+      }
+      if (!isHttpsUrl(form.videoSummaryUrl.trim())) throw new Error('视频上传失败，请重试。');
       const works = await buildWorksPayload(workSlotsRef.current, (status) => setMessage(status));
 
       setMessage('正在提交到活动后端...');
@@ -843,7 +959,7 @@ function UploadPage() {
         </div>
         <p className="eyebrow">UPLOAD CHANNEL</p>
         <h1 className="glitch-title upload-title" data-text="上传">上传</h1>
-        <p className="subtitle">填写姓名、多选职能、文本总结、1-2 张本地作品图片，并保留现有 WebM 录制上传流程直连活动后端。</p>
+        <p className="subtitle">填写姓名，先上传作品，再写职位感悟，最后录制并上传视频总结。</p>
         <div className="hero-actions">
           <a className="ghost-action" href="/">返回公开页面</a>
         </div>
@@ -887,12 +1003,12 @@ function UploadPage() {
           </div>
         </div>
 
-        <label className="field-label" htmlFor="reflection-note">文本总结</label>
+        <label className="field-label" htmlFor="reflection-note">职位感悟</label>
         <textarea
           id="reflection-note"
           value={form.textSummary}
           onChange={(event) => setForm((current) => ({ ...current, textSummary: event.target.value }))}
-          placeholder="写下这次课程总结的核心内容"
+          placeholder="写下你在本次岗位中的感悟与反思"
           rows={4}
           required
         />
@@ -940,25 +1056,14 @@ function UploadPage() {
                   <RotateCcw />
                   重新录制
                 </button>
-                <button className="primary-action" type="button" onClick={() => void uploadRecording()} disabled={uploadState === 'uploading'}>
+                <button className="primary-action" type="button" onClick={() => void uploadRecording()} disabled={uploadState === 'uploading' || uploadState === 'uploaded'}>
                   {uploadState === 'uploading' ? <Loader2 className="spin" /> : <UploadCloud />}
-                  上传录制视频
+                  {uploadState === 'uploaded' ? '视频已上传' : '上传录制视频'}
                 </button>
               </>
             ) : null}
           </div>
         </div>
-
-        <label className="field-label" htmlFor="video-summary-url">视频总结链接</label>
-        <input
-          id="video-summary-url"
-          className="url-field"
-          type="url"
-          value={form.videoSummaryUrl}
-          onChange={(event) => setForm((current) => ({ ...current, videoSummaryUrl: event.target.value }))}
-          placeholder="上传成功后自动填入，也可手动填写 HTTPS 链接"
-          required
-        />
 
         <div className="work-upload-grid">
           {workSlots.map((slot, index) => (
