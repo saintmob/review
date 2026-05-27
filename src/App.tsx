@@ -63,7 +63,7 @@ type RecordingState = 'idle' | 'camera-ready' | 'recording' | 'recorded' | 'erro
 
 const defaultEventApiBase = 'https://show-plan-event-backend.liucheng-show-plan.workers.dev';
 const eventApiBase = (import.meta.env.VITE_EVENT_API_BASE || defaultEventApiBase).replace(/\/+$/, '');
-const roleOptions = ['导演', '交互', '视觉', '音乐', '海报', '字幕', 'API搭建', '场务', '指导老师'];
+const roleOptions = ['音乐', '交互', '视觉', '导演', '海报', '字幕', 'API搭建', '场务', '指导老师'];
 
 const initialForm = {
   fullName: '',
