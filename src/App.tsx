@@ -63,7 +63,7 @@ type RecordingState = 'idle' | 'camera-ready' | 'recording' | 'recorded' | 'erro
 
 const defaultEventApiBase = 'https://show-plan-event-backend.liucheng-show-plan.workers.dev';
 const eventApiBase = (import.meta.env.VITE_EVENT_API_BASE || defaultEventApiBase).replace(/\/+$/, '');
-const roleOptions = ['导演组', '舞台监督', '视觉设计', '音频技术', '摄影摄像', '主持串联', '场务执行', '互动设计'];
+const roleOptions = ['导演', '交互', '视觉', '音乐', '海报', '字幕', 'API搭建', '场务', '指导老师'];
 
 const initialForm = {
   fullName: '',
@@ -902,9 +902,6 @@ function UploadPage() {
         cancelAnimationFrame(animationFrameRef.current);
         animationFrameRef.current = null;
       }
-      canvasStream.getTracks().forEach((track) => {
-        if (track.kind === 'video') track.stop();
-      });
       const blob = new Blob(chunksRef.current, { type: mimeType || 'video/webm' });
       const durationMs = Math.max(0, Math.round(performance.now() - recordStartedAtRef.current));
       if (recordedUrlRef.current) URL.revokeObjectURL(recordedUrlRef.current);
@@ -924,6 +921,7 @@ function UploadPage() {
       }));
       setUploadState('idle');
       setRecordingState('recorded');
+      stopCamera();
       setMessage(`录制完成，已压缩到最高 720p，文件体积 ${formatFileSize(blob.size)}。`);
     };
 
@@ -1138,7 +1136,7 @@ function UploadPage() {
         <div className="camera-recorder">
           <div className="camera-preview">
             {recordedUrl ? (
-              <video src={recordedUrl} controls playsInline />
+              <video src={recordedUrl} controls playsInline autoPlay />
             ) : (
               <>
                 <video ref={liveVideoRef} autoPlay muted playsInline />
