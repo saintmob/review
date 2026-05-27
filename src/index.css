@@ -324,9 +324,15 @@ button {
 }
 
 .display-page {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 20px;
-  min-height: calc(100svh - clamp(36px, 6vw, 68px));
+  height: calc(100svh - clamp(36px, 6vw, 68px));
+  overflow: hidden;
+}
+
+.display-page.is-reviewing {
+  gap: 16px;
 }
 
 .display-header {
@@ -349,6 +355,8 @@ button {
 
 .display-stage {
   position: relative;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
   border: 1px solid rgba(124, 232, 255, 0.22);
   background: rgba(4, 10, 25, 0.58);
@@ -363,6 +371,7 @@ button {
   display: flex;
   will-change: transform;
   width: calc(var(--slide-count, 1) * 100%);
+  height: 100%;
 }
 
 .display-track.is-animated {
@@ -371,40 +380,20 @@ button {
 
 .display-slide {
   flex: 0 0 calc(100% / var(--slide-count, 1));
-  min-height: calc(100svh - clamp(220px, 20vw, 280px));
+  height: 100%;
+  min-height: 0;
 }
 
 .display-slide-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 320px);
+  grid-template-columns: minmax(0, 1.55fr) minmax(280px, 330px);
   grid-template-areas:
-    "heading heading"
     "video side"
-    "summary side"
-    "summary footer";
+    "summary side";
+  grid-template-rows: minmax(0, 1fr) auto;
   gap: 18px 22px;
-  min-height: inherit;
+  height: 100%;
   padding: clamp(18px, 2.8vw, 28px);
-}
-
-.display-stage-header {
-  grid-area: heading;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.display-stage-topline {
-  color: rgba(244, 243, 255, 0.95);
-  font-size: clamp(1.2rem, 2vw, 1.9rem);
-  letter-spacing: 0.08em;
-}
-
-.display-stage-counter {
-  color: rgba(179, 242, 255, 0.72);
-  font-size: 0.78rem;
-  text-transform: uppercase;
 }
 
 .display-video-panel {
@@ -412,6 +401,7 @@ button {
   display: grid;
   gap: 12px;
   align-content: start;
+  min-height: 0;
 }
 
 .display-video-label,
@@ -425,6 +415,8 @@ button {
 
 .display-video-panel video {
   width: 100%;
+  height: 100%;
+  min-height: 0;
   aspect-ratio: 16 / 9;
   border: 1px solid rgba(118, 238, 255, 0.18);
   background: #02050d;
@@ -440,6 +432,7 @@ button {
   border: 1px solid rgba(124, 232, 255, 0.22);
   background: rgba(3, 8, 18, 0.44);
   box-shadow: 0 0 0 1px rgba(158, 118, 255, 0.08) inset;
+  min-height: 0;
 }
 
 .display-cover {
@@ -509,38 +502,44 @@ button {
 }
 
 .display-footer-note {
-  grid-area: footer;
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-  color: rgba(179, 242, 255, 0.8);
-  font-size: 0.84rem;
+  display: none;
 }
 
 .display-start-overlay {
   position: absolute;
   inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 24px 24px 96px;
+  pointer-events: none;
+}
+
+.display-start-button {
   display: grid;
   place-items: center;
   gap: 10px;
-  border: 0;
+  width: min(100%, 42rem);
+  padding: 20px 24px;
+  border: 1px solid rgba(118, 238, 255, 0.22);
   color: #eef7ff;
   background: rgba(2, 5, 13, 0.76);
   text-align: center;
   backdrop-filter: blur(8px);
+  pointer-events: auto;
 }
 
-.display-start-overlay svg {
+.display-start-button svg {
   width: 28px;
   height: 28px;
   color: #8bf7ff;
 }
 
-.display-start-overlay strong {
+.display-start-button strong {
   font-size: clamp(1.4rem, 3vw, 2rem);
 }
 
-.display-start-overlay span {
+.display-start-button span {
   max-width: 32rem;
   color: rgba(217, 246, 255, 0.78);
   line-height: 1.7;
@@ -549,6 +548,33 @@ button {
 .display-message {
   width: fit-content;
   max-width: 100%;
+}
+
+.display-next-button {
+  position: absolute;
+  right: clamp(16px, 2vw, 24px);
+  bottom: clamp(16px, 2vw, 24px);
+  z-index: 3;
+  min-width: 128px;
+  min-height: 54px;
+  padding-inline: 22px;
+  border: 1px solid rgba(118, 238, 255, 0.44);
+  color: #eef7ff;
+  background:
+    linear-gradient(135deg, rgba(13, 27, 61, 0.92), rgba(42, 58, 112, 0.92));
+  box-shadow:
+    0 0 0 1px rgba(120, 247, 255, 0.12) inset,
+    0 16px 44px rgba(0, 0, 0, 0.32);
+}
+
+.display-next-button:hover,
+.display-next-button:focus-visible {
+  border-color: rgba(185, 251, 255, 0.92);
+  outline: none;
+  box-shadow:
+    0 0 0 1px rgba(120, 247, 255, 0.18) inset,
+    0 20px 50px rgba(0, 0, 0, 0.4),
+    0 0 24px rgba(90, 239, 255, 0.2);
 }
 
 .carousel-page,
@@ -1519,16 +1545,9 @@ audio {
   .display-slide-grid {
     grid-template-columns: 1fr;
     grid-template-areas:
-      "heading"
       "video"
       "side"
-      "summary"
-      "footer";
-  }
-
-  .display-footer-note {
-    justify-content: flex-start;
-    flex-wrap: wrap;
+      "summary";
   }
 
   .reflection-grid {

@@ -385,7 +385,7 @@ function LandingPage() {
         </div>
         <p className="eyebrow">ENTRY CHANNEL</p>
         <h1 className="glitch-title" data-text="回响">回响</h1>
-        <p className="subtitle">进入视频展示页自动轮播播放作品、封面和总结。</p>
+        <p className="subtitle">进入视频展示页查看作品、封面与感悟回顾。</p>
         <div className="hero-actions">
           <a className="ghost-action" href="/display">
             <Play />
@@ -403,9 +403,8 @@ function DisplayPage() {
   const [isStarted, setIsStarted] = useState(false);
   const [trackIndex, setTrackIndex] = useState(0);
   const [isTransitionEnabled, setIsTransitionEnabled] = useState(true);
-  const [pageMessage, setPageMessage] = useState('');
+  const [isAwaitingNext, setIsAwaitingNext] = useState(false);
   const videoRefs = useRef<Array<HTMLVideoElement | null>>([]);
-  const wrapTriggeredRef = useRef(false);
 
   const slides = useMemo(() => {
     return data.students.map((student) => {
@@ -426,8 +425,6 @@ function DisplayPage() {
     return [...slides, slides[0]];
   }, [slides]);
 
-  const currentLabel = slides.length ? `${Math.min(trackIndex, slides.length - 1) + 1} / ${slides.length}` : '';
-
   useEffect(() => {
     if (!isStarted || !slides.length) return;
 
@@ -443,55 +440,46 @@ function DisplayPage() {
     currentVideo.currentTime = 0;
     const playPromise = currentVideo.play();
     if (playPromise && typeof playPromise.catch === 'function') {
-      playPromise.catch(() => {
-        setPageMessage('浏览器暂时阻止了自动播放，请重新点击开始。');
-        setIsStarted(false);
-      });
+      playPromise.catch(() => {});
     }
   }, [isStarted, loopSlides.length, slides.length, trackIndex]);
 
   useEffect(() => {
-    if (!slides.length) return;
-    if (trackIndex < slides.length) {
-      wrapTriggeredRef.current = false;
-      return;
-    }
-
-    if (trackIndex === slides.length && !wrapTriggeredRef.current) {
-      wrapTriggeredRef.current = true;
-    }
-  }, [slides.length, trackIndex]);
-
-  useEffect(() => {
-    if (slides.length && trackIndex >= slides.length) {
-      setTrackIndex(0);
-    }
-  }, [slides.length, trackIndex]);
+    setIsAwaitingNext(false);
+  }, [trackIndex]);
 
   function startDisplay() {
     if (!slides.length) return;
+    const currentVideo = videoRefs.current[0];
+    if (currentVideo) {
+      currentVideo.currentTime = 0;
+      void currentVideo.play();
+    }
     setIsStarted(true);
     setTrackIndex(0);
     setIsTransitionEnabled(true);
-    setPageMessage('展示已开始，视频会自动顺序播放。');
-  }
-
-  function restartDisplay() {
-    if (!slides.length) return;
-    setIsStarted(true);
-    setTrackIndex(0);
-    setIsTransitionEnabled(true);
-    setPageMessage('已重新从第一位开始播放。');
+    setIsAwaitingNext(false);
   }
 
   function goNext() {
     if (!slides.length) return;
+    setIsAwaitingNext(false);
     if (slides.length === 1) {
       const currentVideo = videoRefs.current[0];
       if (currentVideo) {
         currentVideo.currentTime = 0;
         void currentVideo.play();
       }
+      return;
+    }
+    const nextIndex = trackIndex >= slides.length - 1 ? 0 : trackIndex + 1;
+    const nextVideo = videoRefs.current[nextIndex];
+    if (nextVideo) {
+      nextVideo.currentTime = 0;
+      void nextVideo.play();
+    }
+    if (trackIndex >= slides.length - 1) {
+      setTrackIndex(slides.length);
       return;
     }
     setTrackIndex((current) => current + 1);
@@ -504,37 +492,32 @@ function DisplayPage() {
       setTrackIndex(0);
       window.requestAnimationFrame(() => {
         setIsTransitionEnabled(true);
-        wrapTriggeredRef.current = false;
       });
     }
   }
 
   return (
-    <section className="display-page page-fade">
-      <div className="display-header">
-        <div>
-          <div className="signal-pills" aria-hidden="true">
-            <span>Display Mode</span>
-            <span>Auto Playlist</span>
-            <span>{eventApiBase.replace(/^https?:\/\//, '')}</span>
+    <section className={`display-page page-fade ${isStarted ? 'is-reviewing' : ''}`}>
+      {!isStarted ? (
+        <div className="display-header">
+          <div>
+            <div className="signal-pills" aria-hidden="true">
+              <span>Display Mode</span>
+              <span>Review Queue</span>
+              <span>{eventApiBase.replace(/^https?:\/\//, '')}</span>
+            </div>
+            <p className="eyebrow">VIDEO DISPLAY</p>
+            <h1 className="glitch-title" data-text="展示">展示</h1>
+            <p className="subtitle">点击开始后，当前学生视频会自动播放，结束后点右下角“下一位”切换到下一位同学。</p>
           </div>
-          <p className="eyebrow">VIDEO DISPLAY</p>
-          <h1 className="glitch-title" data-text="展示">展示</h1>
-          <p className="subtitle">点击开始后，视频将按顺序自动播放。每播完一位同学，画面会向左滑到下一位，封面与文字同步切换。</p>
-        </div>
-        <div className="display-header-actions">
-          <button className="ghost-action" type="button" onClick={() => void load()}>
-            <RefreshCw />
-            刷新数据
-          </button>
-          {isStarted ? (
-            <button className="primary-action" type="button" onClick={restartDisplay}>
-              <Play />
-              重新开始
+          <div className="display-header-actions">
+            <button className="ghost-action" type="button" onClick={() => void load()}>
+              <RefreshCw />
+              刷新数据
             </button>
-          ) : null}
+          </div>
         </div>
-      </div>
+      ) : null}
 
       <div className="display-stage">
         <div
@@ -551,11 +534,6 @@ function DisplayPage() {
               return (
                 <article className="display-slide" key={`${slide.id || slide.fullName}-${index}`}>
                   <div className="display-slide-grid">
-                    <div className="display-stage-header">
-                      <div className="display-stage-topline">回响....</div>
-                      <div className="display-stage-counter">{currentLabel}</div>
-                    </div>
-
                     <section className="display-video-panel">
                       <div className="display-video-label">video</div>
                       <video
@@ -567,7 +545,11 @@ function DisplayPage() {
                         preload="metadata"
                         controls={false}
                         autoPlay={isStarted && isActive && index < slides.length}
-                        onEnded={goNext}
+                        onEnded={() => {
+                          if (isActive) {
+                            setIsAwaitingNext(true);
+                          }
+                        }}
                         onClick={() => {
                           if (!isStarted) {
                             startDisplay();
@@ -600,11 +582,6 @@ function DisplayPage() {
                       <div className="display-summary-title">感悟总结。</div>
                       <p>{slide.textSummary || '这位同学尚未填写职位感悟。'}</p>
                     </div>
-
-                    <div className="display-footer-note">
-                      <span>{slide.fullName}</span>
-                      <span>{slide.roleLabel}</span>
-                    </div>
                   </div>
                 </article>
               );
@@ -617,15 +594,23 @@ function DisplayPage() {
         </div>
 
         {!isStarted ? (
-          <button className="display-start-overlay" type="button" onClick={startDisplay}>
-            <Play />
-            <strong>开始播放</strong>
-            <span>点击后将自动播放全部学生视频，并在每位结束后向左切换。</span>
+          <div className="display-start-overlay">
+            <button className="display-start-button" type="button" autoFocus onClick={startDisplay}>
+              <Play />
+              <strong>开始回顾</strong>
+              <span>点击后进入回顾模式，视频结束后在右下角点“下一位”切换。</span>
+            </button>
+          </div>
+        ) : null}
+
+        {isStarted && isAwaitingNext && slides.length ? (
+          <button className="display-next-button" type="button" onClick={goNext}>
+            下一位
           </button>
         ) : null}
       </div>
 
-      {((pageMessage || message) && <p className="terminal-line display-message"><i /> {pageMessage || message}</p>)}
+      {!isStarted && (message ? <p className="terminal-line display-message"><i /> {message}</p> : null)}
     </section>
   );
 }
