@@ -386,12 +386,12 @@ button {
 
 .display-slide-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.55fr) minmax(280px, 330px);
+  grid-template-columns: minmax(0, 1.75fr) minmax(250px, 300px);
   grid-template-areas:
     "video side"
     "summary side";
   grid-template-rows: minmax(0, 1fr) auto;
-  gap: 18px 22px;
+  gap: 18px 18px;
   height: 100%;
   padding: clamp(18px, 2.8vw, 28px);
 }
@@ -426,9 +426,9 @@ button {
 .display-side-panel {
   grid-area: side;
   display: grid;
-  gap: 12px;
+  gap: 14px;
   align-content: start;
-  padding: 16px;
+  padding: 20px 16px 16px;
   border: 1px solid rgba(124, 232, 255, 0.22);
   background: rgba(3, 8, 18, 0.44);
   box-shadow: 0 0 0 1px rgba(158, 118, 255, 0.08) inset;
@@ -437,7 +437,8 @@ button {
 
 .display-cover {
   width: 100%;
-  aspect-ratio: 1 / 1.08;
+  margin-top: 6px;
+  aspect-ratio: 16 / 10;
   border: 1px solid rgba(118, 238, 255, 0.16);
   background: #02050d;
   object-fit: cover;
@@ -446,7 +447,7 @@ button {
 .display-cover.placeholder {
   display: grid;
   place-items: center;
-  min-height: 240px;
+  min-height: 200px;
   color: rgba(179, 242, 255, 0.76);
   border-style: dashed;
 }
