@@ -78,6 +78,42 @@ export async function resolveExistingStorageBucketName(projectId?: string, servi
   return "";
 }
 
+export function isAllowedMediaProxyTarget(rawUrl: string) {
+  try {
+    const url = new URL(rawUrl);
+    if (url.protocol !== "https:") return false;
+    return url.pathname.includes("/api/media/");
+  } catch {
+    return false;
+  }
+}
+
+export function normalizeMediaContentType(value: string | null | undefined) {
+  if (typeof value !== "string") return "";
+  return value.split(";")[0].trim().toLowerCase();
+}
+
+export async function fetchMediaAsBuffer(url: string) {
+  const response = await fetch(url, {
+    method: "GET",
+    redirect: "follow",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Media request failed with HTTP ${response.status}`);
+  }
+
+  const contentType = normalizeMediaContentType(response.headers.get("content-type")) || "application/octet-stream";
+  const contentLength = response.headers.get("content-length") || "";
+  const buffer = Buffer.from(await response.arrayBuffer());
+
+  return {
+    buffer,
+    contentType,
+    contentLength: contentLength && Number.isFinite(Number(contentLength)) ? contentLength : String(buffer.length),
+  };
+}
+
 function getSessionSecret() {
   return process.env.SESSION_SECRET || "local-dev-session-secret";
 }

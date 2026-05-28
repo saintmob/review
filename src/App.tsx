@@ -355,6 +355,11 @@ function isPlayableReviewVideoUrl(value: string) {
   }
 }
 
+function proxyMediaUrl(value: string) {
+  if (!value) return '';
+  return `/api/media?url=${encodeURIComponent(value)}`;
+}
+
 function getStudentPrimaryWork(student: StudentRecord) {
   return student.works.find((work) => work.coverUrl || work.workUrl) || student.works[0] || null;
 }
@@ -594,6 +599,7 @@ function DisplayPage() {
   const [isTransitionEnabled, setIsTransitionEnabled] = useState(true);
   const [isAwaitingNext, setIsAwaitingNext] = useState(false);
   const videoRefs = useRef<Array<HTMLVideoElement | null>>([]);
+  const startLockRef = useRef(false);
 
   const reviewStudents = useMemo(() => {
     return data.students.filter((student) => isPlayableReviewVideoUrl(student.videoSummaryUrl));
@@ -643,16 +649,18 @@ function DisplayPage() {
   }, [trackIndex]);
 
   function startDisplay() {
-    if (!slides.length) return;
-    const currentVideo = videoRefs.current[0];
-    if (currentVideo) {
-      currentVideo.currentTime = 0;
-      void currentVideo.play();
-    }
+    if (startLockRef.current) return;
+    startLockRef.current = true;
     setIsStarted(true);
     setTrackIndex(0);
     setIsTransitionEnabled(true);
     setIsAwaitingNext(false);
+    const currentVideo = videoRefs.current[0];
+    if (currentVideo) {
+      currentVideo.load();
+      currentVideo.currentTime = 0;
+      void currentVideo.play();
+    }
   }
 
   function goNext() {
@@ -734,8 +742,7 @@ function DisplayPage() {
                         ref={(node) => {
                           videoRefs.current[index] = node;
                         }}
-                        src={slide.videoSummaryUrl}
-                        poster={slide.coverUrl || undefined}
+                        src={proxyMediaUrl(slide.videoSummaryUrl)}
                         playsInline
                         preload="auto"
                         controls={false}
@@ -809,12 +816,23 @@ function DisplayPage() {
         </div>
 
         {!isStarted ? (
-          <div className="display-start-overlay">
-            <button className="display-start-button" type="button" autoFocus onClick={startDisplay}>
+          <div
+            className="display-start-overlay"
+            role="button"
+            tabIndex={0}
+            onPointerDown={startDisplay}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                startDisplay();
+              }
+            }}
+          >
+            <div className="display-start-button">
               <Play />
               <strong>开始回顾</strong>
               <span>点击后进入回顾模式，视频结束后在右下角点“下一位”切换。</span>
-            </button>
+            </div>
           </div>
         ) : null}
 
@@ -930,7 +948,9 @@ function PlaybackPage() {
                   <div className="summary-item" key={summary.id}>
                     <strong>{summary.fullName}</strong>
                     <p>{summary.textSummary}</p>
-                    <a href={summary.videoSummaryUrl} target="_blank" rel="noreferrer">查看视频总结</a>
+                    <a href={proxyMediaUrl(summary.videoSummaryUrl)} target="_blank" rel="noreferrer">
+                      查看视频总结
+                    </a>
                   </div>
                 ))}
               </div>
@@ -1719,7 +1739,7 @@ function MediaPlayer({ summary, featured = false }: { summary: Summary; featured
         <Play />
         视频总结
       </div>
-      <video src={summary.videoSummaryUrl} controls playsInline />
+      <video src={proxyMediaUrl(summary.videoSummaryUrl)} controls playsInline />
       {!featured ? (
         <div className="summary-card-footer">
           <strong>{summary.fullName}</strong>

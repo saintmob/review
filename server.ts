@@ -7,7 +7,7 @@ import { initializeApp, applicationDefault, cert, getApps } from "firebase-admin
 import { getFirestore, FieldValue, type DocumentData, type Firestore } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
 import "dotenv/config";
-import { resolveExistingStorageBucketName } from "./api/_shared.js";
+import { fetchMediaAsBuffer, isAllowedMediaProxyTarget, resolveExistingStorageBucketName } from "./api/_shared.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -471,6 +471,27 @@ async function startServer() {
       res.json({ ok: true, ...payload });
     } catch (error) {
       const message = error instanceof Error ? error.message : "无法上传封面图片";
+      res.status(502).json({ error: message });
+    }
+  });
+
+  app.get("/api/media", async (req, res) => {
+    try {
+      const rawUrl = typeof req.query.url === "string" ? req.query.url : "";
+      if (!rawUrl || !isAllowedMediaProxyTarget(rawUrl)) {
+        res.status(400).json({ error: "Invalid media url" });
+        return;
+      }
+
+      const payload = await fetchMediaAsBuffer(rawUrl);
+      res.status(200);
+      res.setHeader("Content-Type", payload.contentType);
+      res.setHeader("Content-Length", payload.contentLength);
+      res.setHeader("Cache-Control", "public, max-age=300, must-revalidate");
+      res.setHeader("Accept-Ranges", "none");
+      res.send(payload.buffer);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "无法加载视频";
       res.status(502).json({ error: message });
     }
   });
