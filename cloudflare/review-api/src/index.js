@@ -250,64 +250,70 @@ async function handleCreateStudent(request, env) {
 
 export default {
   async fetch(request, env) {
-    const url = new URL(request.url);
+    try {
+      const url = new URL(request.url);
 
-    if (request.method === 'OPTIONS') {
-      return noContent(request);
-    }
-
-    if (url.pathname === '/api/health' && request.method === 'GET') {
-      return json(request, {
-        status: 'ok',
-        service: 'review-api',
-      });
-    }
-
-    if (url.pathname === '/api/bootstrap' && request.method === 'GET') {
-      return handleBootstrap(request, env);
-    }
-
-    if (url.pathname === '/api/program' && request.method === 'GET') {
-      return handleProgram(request, env);
-    }
-
-    if (url.pathname === '/api/works' && request.method === 'GET') {
-      return handleWorks(request, env);
-    }
-
-    if (url.pathname === '/api/summaries' && request.method === 'GET') {
-      return handleSummaries(request, env);
-    }
-
-    if (url.pathname === '/api/students' && request.method === 'GET') {
-      return handleStudents(request, env);
-    }
-
-    if (url.pathname === '/api/students' && request.method === 'POST') {
-      return handleCreateStudent(request, env);
-    }
-
-    if (url.pathname === '/api/uploads' && request.method === 'POST') {
-      return handleUpload(request, env);
-    }
-
-    if (url.pathname.startsWith('/api/media/') && (request.method === 'GET' || request.method === 'HEAD')) {
-      const key = decodeURIComponent(url.pathname.slice('/api/media/'.length));
-      if (request.headers.has('Range')) {
-        const probe = await env.MEDIA.get(key);
-        const range = probe ? parseRangeHeader(request.headers.get('Range') || '', probe.size) : null;
-        if (!range && request.headers.get('Range')) {
-          return text(request, 'Range not satisfiable', {
-            status: 416,
-            headers: {
-              'Content-Range': probe ? `bytes */${probe.size}` : 'bytes */0',
-            },
-          });
-        }
+      if (request.method === 'OPTIONS') {
+        return noContent(request);
       }
-      return handleMedia(request, env, key);
-    }
 
-    return methodNotAllowed(request, ['GET', 'POST', 'HEAD', 'OPTIONS']);
+      if (url.pathname === '/api/health' && request.method === 'GET') {
+        return json(request, {
+          status: 'ok',
+          service: 'review-api',
+        });
+      }
+
+      if (url.pathname === '/api/bootstrap' && request.method === 'GET') {
+        return handleBootstrap(request, env);
+      }
+
+      if (url.pathname === '/api/program' && request.method === 'GET') {
+        return handleProgram(request, env);
+      }
+
+      if (url.pathname === '/api/works' && request.method === 'GET') {
+        return handleWorks(request, env);
+      }
+
+      if (url.pathname === '/api/summaries' && request.method === 'GET') {
+        return handleSummaries(request, env);
+      }
+
+      if (url.pathname === '/api/students' && request.method === 'GET') {
+        return handleStudents(request, env);
+      }
+
+      if (url.pathname === '/api/students' && request.method === 'POST') {
+        return handleCreateStudent(request, env);
+      }
+
+      if (url.pathname === '/api/uploads' && request.method === 'POST') {
+        return handleUpload(request, env);
+      }
+
+      if (url.pathname.startsWith('/api/media/') && (request.method === 'GET' || request.method === 'HEAD')) {
+        const key = decodeURIComponent(url.pathname.slice('/api/media/'.length));
+        if (request.headers.has('Range')) {
+          const probe = await env.MEDIA.get(key);
+          const range = probe ? parseRangeHeader(request.headers.get('Range') || '', probe.size) : null;
+          if (!range && request.headers.get('Range')) {
+            return text(request, 'Range not satisfiable', {
+              status: 416,
+              headers: {
+                'Content-Range': probe ? `bytes */${probe.size}` : 'bytes */0',
+              },
+            });
+          }
+        }
+        return handleMedia(request, env, key);
+      }
+
+      return methodNotAllowed(request, ['GET', 'POST', 'HEAD', 'OPTIONS']);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Internal server error';
+      console.error('Worker error:', message, error);
+      return json(request, { error: message }, { status: 500 });
+    }
   },
 };
