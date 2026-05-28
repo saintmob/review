@@ -344,6 +344,17 @@ function isHttpsUrl(value: string) {
   }
 }
 
+function isPlayableReviewVideoUrl(value: string) {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:') return false;
+    if (['example.com', 'localhost', '127.0.0.1'].includes(url.hostname)) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function getStudentPrimaryWork(student: StudentRecord) {
   return student.works.find((work) => work.coverUrl || work.workUrl) || student.works[0] || null;
 }
@@ -584,8 +595,12 @@ function DisplayPage() {
   const [isAwaitingNext, setIsAwaitingNext] = useState(false);
   const videoRefs = useRef<Array<HTMLVideoElement | null>>([]);
 
+  const reviewStudents = useMemo(() => {
+    return data.students.filter((student) => isPlayableReviewVideoUrl(student.videoSummaryUrl));
+  }, [data.students]);
+
   const slides = useMemo(() => {
-    return data.students.map((student) => {
+    return reviewStudents.map((student) => {
       const primaryWork = getStudentPrimaryWork(student);
       return {
         ...student,
@@ -596,7 +611,7 @@ function DisplayPage() {
         workLabel: primaryWork ? `作品 ${primaryWork.workIndex ?? 1}` : '作品',
       };
     });
-  }, [data.students]);
+  }, [reviewStudents]);
 
   const loopSlides = useMemo(() => {
     if (slides.length <= 1) return slides;
@@ -615,6 +630,7 @@ function DisplayPage() {
 
     if (!currentVideo || trackIndex >= slides.length) return;
 
+    currentVideo.load();
     currentVideo.currentTime = 0;
     const playPromise = currentVideo.play();
     if (playPromise && typeof playPromise.catch === 'function') {
@@ -719,11 +735,26 @@ function DisplayPage() {
                           videoRefs.current[index] = node;
                         }}
                         src={slide.videoSummaryUrl}
+                        poster={slide.coverUrl || undefined}
                         playsInline
-                        preload="metadata"
+                        preload="auto"
                         controls={false}
                         autoPlay={isStarted && isActive && index < slides.length}
+                        onLoadedData={() => {
+                          if (isStarted && isActive) {
+                            const currentVideo = videoRefs.current[index];
+                            if (currentVideo) {
+                              currentVideo.currentTime = 0;
+                              void currentVideo.play();
+                            }
+                          }
+                        }}
                         onEnded={() => {
+                          if (isActive) {
+                            setIsAwaitingNext(true);
+                          }
+                        }}
+                        onError={() => {
                           if (isActive) {
                             setIsAwaitingNext(true);
                           }
@@ -766,7 +797,13 @@ function DisplayPage() {
             })
           ) : (
             <article className="display-slide">
-              <div className="empty-state">{isLoading ? '正在加载展示数据...' : '暂无可展示的视频总结。'}</div>
+              <div className="empty-state">
+                {isLoading
+                  ? '正在加载展示数据...'
+                  : data.students.length
+                    ? '当前没有可播放的视频回顾，请检查后台视频地址。'
+                    : '暂无可展示的视频总结。'}
+              </div>
             </article>
           )}
         </div>
