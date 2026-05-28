@@ -1,10 +1,10 @@
 function corsHeaders(request) {
-  const origin = request.headers.get('Origin') || '*';
-  const allowOrigin = origin === 'null' ? '*' : origin;
+  const origin = request.headers.get('Origin');
+  const allowOrigin = origin || '*';
 
   return {
     'Access-Control-Allow-Origin': allowOrigin,
-    'Access-Control-Allow-Methods': 'GET,POST,OPTIONS,HEAD,PUT,DELETE',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS, HEAD, PUT, DELETE',
     'Access-Control-Allow-Headers': 'Accept, Authorization, Content-Type, Origin, Range, X-Requested-With, X-Checkin-Device-Id, X-Checkin-Ticket',
     'Access-Control-Expose-Headers': 'Accept-Ranges, Content-Length, Content-Range, Content-Type, ETag, Location',
     'Access-Control-Max-Age': '86400',

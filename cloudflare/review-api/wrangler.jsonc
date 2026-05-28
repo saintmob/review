@@ -1,26 +1,26 @@
 {
-  "name": "review-api",
-  "main": "src/index.js",
-  "compatibility_date": "2026-05-28",
-  "observability": {
-    "enabled": true,
-    "head_sampling_rate": 1
-  },
-  "vars": {
-    "MAX_UPLOAD_BYTES": "104857600",
-    "MEDIA_PREFIX": "submissions"
-  },
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "review-db",
-      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID"
-    }
-  ],
-  "r2_buckets": [
-    {
-      "binding": "MEDIA",
-      "bucket_name": "review-media"
-    }
-  ]
+	"name": "review-api",
+	"main": "src/index.js",
+	"compatibility_date": "2026-05-28",
+	"observability": {
+		"enabled": true,
+		"head_sampling_rate": 1
+	},
+	"vars": {
+		"MAX_UPLOAD_BYTES": "104857600",
+		"MEDIA_PREFIX": "submissions"
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "review-db",
+			"database_id": "5ebab569-cb1b-4565-882a-82a312967b0f"
+		}
+	],
+	"r2_buckets": [
+		{
+			"binding": "MEDIA",
+			"bucket_name": "review-media"
+		}
+	]
 }
