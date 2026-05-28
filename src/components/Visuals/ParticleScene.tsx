@@ -93,6 +93,24 @@ export const ParticleScene: React.FC<ParticleSceneProps> = ({
   const opacityRef = useRef(0);
   const colorRef = useRef(new THREE.Color("#22d3ee"));
   const squareMatrixObject = useMemo(() => new THREE.Object3D(), []);
+  const tempoPalette = useMemo(() => [
+    new THREE.Color("#22d3ee"),
+    new THREE.Color("#38bdf8"),
+    new THREE.Color("#6366f1"),
+    new THREE.Color("#8b5cf6"),
+    new THREE.Color("#ec4899"),
+    new THREE.Color("#f97316"),
+    new THREE.Color("#bef264"),
+    new THREE.Color("#ffffff"),
+  ], []);
+  const growthPalette = useMemo(() => ({
+    cyan: new THREE.Color("#22d3ee"),
+    violet: new THREE.Color("#8b5cf6"),
+    pink: new THREE.Color("#ec4899"),
+    white: new THREE.Color("#ffffff"),
+    leafStart: new THREE.Color("#7dd3fc"),
+    leafEnd: new THREE.Color("#b7f7a5"),
+  }), []);
   const { viewport } = useThree();
   const screenCenter = getScreenCenter(screenId);
   const isOverviewScreen = screenId === 'OVERVIEW';
@@ -492,16 +510,6 @@ export const ParticleScene: React.FC<ParticleSceneProps> = ({
     const idleMist = visibleGrowth <= 0.001 ? Math.min(1, 0.58 + intensity * 0.42) : visibleGrowth;
     const sourceLayout = pulseSource ? SCREEN_LAYOUT[pulseSource] : null;
     const pulseAge = pulseTime ? (Date.now() - pulseTime) / 1000 : 99;
-    const tempoPalette = [
-      new THREE.Color("#22d3ee"),
-      new THREE.Color("#38bdf8"),
-      new THREE.Color("#6366f1"),
-      new THREE.Color("#8b5cf6"),
-      new THREE.Color("#ec4899"),
-      new THREE.Color("#f97316"),
-      new THREE.Color("#bef264"),
-      new THREE.Color("#ffffff"),
-    ];
     const tempoLevel = THREE.MathUtils.clamp(intensity, 0, 1) * (tempoPalette.length - 1);
     const tempoIndex = Math.min(tempoPalette.length - 2, Math.floor(tempoLevel));
     const tempoColor = tempoPalette[tempoIndex].clone().lerp(tempoPalette[tempoIndex + 1], tempoLevel - tempoIndex);
@@ -526,16 +534,12 @@ export const ParticleScene: React.FC<ParticleSceneProps> = ({
       mat.visible = opacityRef.current > 0.0001;
 
       // Color Spectrum Shift 
-      const c1 = new THREE.Color("#22d3ee");
-      const c2 = new THREE.Color("#8b5cf6");
-      const c3 = new THREE.Color("#ec4899");
-      const c4 = new THREE.Color("#ffffff");
       if (intensity < 0.4) {
-        colorRef.current.copy(c1).lerp(c2, intensity / 0.4);
+        colorRef.current.copy(growthPalette.cyan).lerp(growthPalette.violet, intensity / 0.4);
       } else if (intensity < 0.8) {
-        colorRef.current.copy(c2).lerp(c3, (intensity - 0.4) / 0.4);
+        colorRef.current.copy(growthPalette.violet).lerp(growthPalette.pink, (intensity - 0.4) / 0.4);
       } else {
-        colorRef.current.copy(c3).lerp(c4, (intensity - 0.8) / 0.2);
+        colorRef.current.copy(growthPalette.pink).lerp(growthPalette.white, (intensity - 0.8) / 0.2);
       }
       mat.color.copy(colorRef.current);
       
@@ -543,7 +547,7 @@ export const ParticleScene: React.FC<ParticleSceneProps> = ({
       if (leafRef.current) {
         const leafMat = leafRef.current.material as THREE.PointsMaterial;
         leafMat.opacity = Math.min(0.8, opacityRef.current * (0.45 + visibleGrowth * 0.5));
-        leafMat.color.copy(new THREE.Color("#7dd3fc").lerp(new THREE.Color("#b7f7a5"), visibleGrowth));
+        leafMat.color.copy(growthPalette.leafStart).lerp(growthPalette.leafEnd, visibleGrowth);
         leafRef.current.geometry.setDrawRange(0, Math.floor(leafCount * visibleGrowth));
       }
 
@@ -617,12 +621,12 @@ export const ParticleScene: React.FC<ParticleSceneProps> = ({
       const posAttr = pointsRef.current.geometry.attributes.position;
       const mat = pointsRef.current.material as THREE.PointsMaterial;
 
-      const activeCount = visibleGrowth > 0.001 ? Math.floor(count * renderGrowth) : 0;
+      const activeCount = renderGrowth > 0.001 ? Math.floor(count * renderGrowth) : 0;
       pointsRef.current.geometry.setDrawRange(0, Math.max(0, activeCount));
 
       mat.size = 0.018 + (intensity * 0.055) + (gestureActive ? 0.025 : 0);
 
-      for (let i = 0; i < count; i++) {
+      for (let i = 0; i < activeCount; i++) {
         const ix = i * 3;
         const iy = i * 3 + 1;
         const iz = i * 3 + 2;

@@ -360,6 +360,22 @@ function proxyMediaUrl(value: string) {
   return `/api/media?url=${encodeURIComponent(value)}`;
 }
 
+function usePrefersReducedMotion() {
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+    if (!mediaQuery) return;
+
+    setPrefersReducedMotion(mediaQuery.matches);
+    const updatePreference = () => setPrefersReducedMotion(mediaQuery.matches);
+    mediaQuery.addEventListener('change', updatePreference);
+    return () => mediaQuery.removeEventListener('change', updatePreference);
+  }, []);
+
+  return prefersReducedMotion;
+}
+
 function getStudentPrimaryWork(student: StudentRecord) {
   return student.works.find((work) => work.coverUrl || work.workUrl) || student.works[0] || null;
 }
@@ -642,7 +658,7 @@ function DisplayPage() {
     if (playPromise && typeof playPromise.catch === 'function') {
       playPromise.catch(() => {});
     }
-  }, [isStarted, loopSlides.length, slides.length, trackIndex]);
+  }, [isStarted, slides.length, trackIndex]);
 
   useEffect(() => {
     setIsAwaitingNext(false);
@@ -655,12 +671,6 @@ function DisplayPage() {
     setTrackIndex(0);
     setIsTransitionEnabled(true);
     setIsAwaitingNext(false);
-    const currentVideo = videoRefs.current[0];
-    if (currentVideo) {
-      currentVideo.load();
-      currentVideo.currentTime = 0;
-      void currentVideo.play();
-    }
   }
 
   function goNext() {
@@ -674,7 +684,7 @@ function DisplayPage() {
       }
       return;
     }
-    const nextIndex = trackIndex >= slides.length - 1 ? 0 : trackIndex + 1;
+    const nextIndex = trackIndex >= slides.length - 1 ? slides.length : trackIndex + 1;
     const nextVideo = videoRefs.current[nextIndex];
     if (nextVideo) {
       nextVideo.currentTime = 0;
@@ -733,6 +743,9 @@ function DisplayPage() {
           {loopSlides.length ? (
             loopSlides.map((slide, index) => {
               const isActive = index === trackIndex;
+              const isAdjacent = isStarted && Math.abs(index - trackIndex) <= 1;
+              const shouldLoadVideo = !isStarted ? index === 0 : isActive || isAdjacent;
+              const shouldPrioritizeCover = isActive || (!isStarted && index === 0);
               return (
                 <article className="display-slide" key={`${slide.id || slide.fullName}-${index}`}>
                   <div className="display-slide-grid">
@@ -742,9 +755,9 @@ function DisplayPage() {
                         ref={(node) => {
                           videoRefs.current[index] = node;
                         }}
-                        src={proxyMediaUrl(slide.videoSummaryUrl)}
+                        src={shouldLoadVideo ? proxyMediaUrl(slide.videoSummaryUrl) : undefined}
                         playsInline
-                        preload="auto"
+                        preload={isActive ? 'auto' : 'metadata'}
                         controls={false}
                         autoPlay={isStarted && isActive && index < slides.length}
                         onLoadedData={() => {
@@ -777,7 +790,13 @@ function DisplayPage() {
                     <aside className="display-side-panel">
                       <div className="display-side-title">作品封面</div>
                       {slide.coverUrl ? (
-                        <img className="display-cover" src={slide.coverUrl} alt={`${slide.fullName} 的作品封面`} />
+                        <img
+                          className="display-cover"
+                          src={slide.coverUrl}
+                          alt={`${slide.fullName} 的作品封面`}
+                          loading={shouldPrioritizeCover ? 'eager' : 'lazy'}
+                          decoding="async"
+                        />
                       ) : (
                         <div className="display-cover placeholder">暂无作品封面</div>
                       )}
@@ -927,7 +946,12 @@ function PlaybackPage() {
               <div className="work-link-list">
                 {data.works.map((work) => (
                   <a className="work-link-card" href={work.workUrl} target="_blank" rel="noreferrer" key={work.id || `${work.studentName}-${work.workUrl}`}>
-                    <img src={work.coverUrl} alt={`${work.studentName || '同学'} 作品封面`} />
+                    <img
+                      src={work.coverUrl}
+                      alt={`${work.studentName || '同学'} 作品封面`}
+                      loading="lazy"
+                      decoding="async"
+                    />
                     <span>{work.studentName || '未命名同学'} · 作品 {work.workIndex ?? 1}</span>
                   </a>
                 ))}
@@ -1739,7 +1763,7 @@ function MediaPlayer({ summary, featured = false }: { summary: Summary; featured
         <Play />
         视频总结
       </div>
-      <video src={proxyMediaUrl(summary.videoSummaryUrl)} controls playsInline />
+      <video src={proxyMediaUrl(summary.videoSummaryUrl)} controls playsInline preload={featured ? 'metadata' : 'none'} />
       {!featured ? (
         <div className="summary-card-footer">
           <strong>{summary.fullName}</strong>
@@ -1751,6 +1775,7 @@ function MediaPlayer({ summary, featured = false }: { summary: Summary; featured
 }
 
 function AmbientStage() {
+  const prefersReducedMotion = usePrefersReducedMotion();
   const traceLines = [
     'M-30 590 C130 510 120 360 250 310 C380 200 505 250 665 470 C830 350 900 330 980 310',
     'M40 720 C190 620 285 705 382 585 C510 425 610 690 790 520 C850 475 890 450 930 430',
@@ -1758,16 +1783,19 @@ function AmbientStage() {
     'M-20 250 C110 205 180 160 255 220 340 295 455 110 555 180 675 252 720 120 920 92',
     'M25 430 L160 515 L285 475 L390 610 L520 565 L670 730 L830 690 L985 780',
   ];
+  const visibleTraceLines = prefersReducedMotion ? traceLines.slice(0, 2) : traceLines;
+  const traceNodeCount = prefersReducedMotion ? 10 : 34;
+  const particleCount = prefersReducedMotion ? 16 : 80;
 
   return (
     <div className="ambient-stage" aria-hidden="true">
       <div className="deep-field" />
-      <div className="signal-dust" />
+      {!prefersReducedMotion ? <div className="signal-dust" /> : null}
       <svg className="constellation-map" viewBox="0 0 1000 860" preserveAspectRatio="none">
-        {traceLines.map((line, index) => (
+        {visibleTraceLines.map((line, index) => (
           <path className="trace-line" d={line} key={line} style={{ '--i': index } as CSSProperties} />
         ))}
-        {Array.from({ length: 34 }).map((_, index) => (
+        {Array.from({ length: traceNodeCount }).map((_, index) => (
           <circle
             className="trace-node"
             cx={(index * 89 + 42) % 1000}
@@ -1778,10 +1806,14 @@ function AmbientStage() {
           />
         ))}
       </svg>
-      <div className="wave wave-a" />
-      <div className="wave wave-b" />
-      <div className="grid-noise" />
-      {Array.from({ length: 80 }).map((_, index) => (
+      {!prefersReducedMotion ? (
+        <>
+          <div className="wave wave-a" />
+          <div className="wave wave-b" />
+          <div className="grid-noise" />
+        </>
+      ) : null}
+      {Array.from({ length: particleCount }).map((_, index) => (
         <span
           className="particle"
           key={index}
