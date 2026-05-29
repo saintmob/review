@@ -17,11 +17,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const range = typeof req.headers.range === "string" ? req.headers.range : "";
     const upstream = await fetch(rawUrl, {
       method: "GET",
       redirect: "follow",
-      headers: range ? { Range: range } : undefined,
     });
 
     if (!upstream.ok && upstream.status !== 206) {
@@ -31,16 +29,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       throw new Error("Media response body is empty");
     }
 
-    const contentType = normalizeMediaContentType(upstream.headers.get("content-type")) || "application/octet-stream";
+    const upstreamContentType = upstream.headers.get("content-type");
+    const contentType = upstreamContentType || normalizeMediaContentType(upstreamContentType) || "application/octet-stream";
     res.status(upstream.status);
     res.setHeader("Content-Type", contentType);
     res.setHeader("Cache-Control", "public, max-age=300, must-revalidate");
-    res.setHeader("Accept-Ranges", upstream.headers.get("accept-ranges") || "bytes");
+    res.setHeader("Accept-Ranges", "none");
 
     const contentLength = upstream.headers.get("content-length");
-    const contentRange = upstream.headers.get("content-range");
     if (contentLength) res.setHeader("Content-Length", contentLength);
-    if (contentRange) res.setHeader("Content-Range", contentRange);
 
     Readable.fromWeb(upstream.body as unknown as NodeReadableStream<Uint8Array>).pipe(res);
   } catch (error) {

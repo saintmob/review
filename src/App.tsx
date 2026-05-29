@@ -360,6 +360,14 @@ function proxyMediaUrl(value: string) {
   return `/api/media?url=${encodeURIComponent(value)}`;
 }
 
+function playVideoIfReady(video: HTMLVideoElement | null) {
+  if (!video || !video.currentSrc) return;
+  const playPromise = video.play();
+  if (playPromise && typeof playPromise.catch === 'function') {
+    playPromise.catch(() => {});
+  }
+}
+
 function usePrefersReducedMotion() {
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
 
@@ -654,10 +662,7 @@ function DisplayPage() {
 
     currentVideo.load();
     currentVideo.currentTime = 0;
-    const playPromise = currentVideo.play();
-    if (playPromise && typeof playPromise.catch === 'function') {
-      playPromise.catch(() => {});
-    }
+    playVideoIfReady(currentVideo);
   }, [isStarted, slides.length, trackIndex]);
 
   useEffect(() => {
@@ -680,7 +685,7 @@ function DisplayPage() {
       const currentVideo = videoRefs.current[0];
       if (currentVideo) {
         currentVideo.currentTime = 0;
-        void currentVideo.play();
+        playVideoIfReady(currentVideo);
       }
       return;
     }
@@ -688,7 +693,7 @@ function DisplayPage() {
     const nextVideo = videoRefs.current[nextIndex];
     if (nextVideo) {
       nextVideo.currentTime = 0;
-      void nextVideo.play();
+      playVideoIfReady(nextVideo);
     }
     if (trackIndex >= slides.length - 1) {
       setTrackIndex(slides.length);
@@ -765,7 +770,7 @@ function DisplayPage() {
                             const currentVideo = videoRefs.current[index];
                             if (currentVideo) {
                               currentVideo.currentTime = 0;
-                              void currentVideo.play();
+                              playVideoIfReady(currentVideo);
                             }
                           }
                         }}

@@ -9,3 +9,4 @@ tasks/
 !.env.example
 firebase-applet-config.json
 .vercel
+.wrangler
