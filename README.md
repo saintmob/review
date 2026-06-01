@@ -5,7 +5,7 @@
 - 学生姓名
 - 多选工作人员职能
 - 文本感悟
-- 摄像头录制的视频总结
+- 摄像头录制或本地上传的视频总结
 - 两组作品网页链接
 - 两张本地作品封面
 
@@ -45,7 +45,7 @@ https://review-api.saintmob.workers.dev
 - 公开页一次性读取 `GET /api/bootstrap`，手动刷新时才重新拉取。
 - 上传页提交时调用 `POST /api/students`。
 - 作品封面是本地文件，提交前会压缩后上传到 Worker，返回公开图片链接后写入 `works.coverUrl`。
-- 视频总结同样通过 `POST /api/uploads` 上传到 Worker，再把返回的公开链接写入 `videoSummaryUrl`。
+- 视频总结可由摄像头录制或选择本地视频文件，均通过 `POST /api/uploads` 上传到 Worker，再把返回的公开链接写入 `videoSummaryUrl`。
 - 后端当前以 Cloudflare D1 + R2 为唯一运行时数据层，不再依赖 Firestore。
 
 ## 备注

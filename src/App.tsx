@@ -331,6 +331,23 @@ function formatFileSize(bytes: number) {
   return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
 }
 
+function inferVideoContentType(blob: Blob, fileName: string) {
+  const explicitType = blob.type.trim();
+  if (explicitType.startsWith('video/')) return explicitType;
+
+  const extension = fileName.split('.').pop()?.toLowerCase();
+  const typesByExtension: Record<string, string> = {
+    mp4: 'video/mp4',
+    m4v: 'video/mp4',
+    webm: 'video/webm',
+    mov: 'video/quicktime',
+    qt: 'video/quicktime',
+    mkv: 'video/x-matroska',
+  };
+
+  return (extension && typesByExtension[extension]) || 'video/mp4';
+}
+
 function formatTimestamp(value: string) {
   if (!value) return '';
   const date = new Date(value);
@@ -431,6 +448,31 @@ async function readCoverImageBlob(file: File) {
         resolve(blob);
       }, 'image/jpeg', 0.82);
     });
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+async function readVideoMetadata(file: File) {
+  const objectUrl = URL.createObjectURL(file);
+
+  try {
+    const video = document.createElement('video');
+    video.preload = 'metadata';
+    video.muted = true;
+    video.playsInline = true;
+
+    await new Promise<void>((resolve, reject) => {
+      video.onloadedmetadata = () => resolve();
+      video.onerror = () => reject(new Error('无法读取视频文件信息'));
+      video.src = objectUrl;
+    });
+
+    return {
+      durationMs: Number.isFinite(video.duration) ? Math.round(video.duration * 1000) : 0,
+      width: video.videoWidth || 0,
+      height: video.videoHeight || 0,
+    };
   } finally {
     URL.revokeObjectURL(objectUrl);
   }
@@ -678,9 +720,11 @@ function DisplayPage() {
   const slides = useMemo(() => {
     return reviewStudents.map((student) => {
       const primaryWork = getStudentPrimaryWork(student);
+      const displayWorks = student.works.filter((work) => work.coverUrl || work.workUrl).slice(0, 2);
       return {
         ...student,
         primaryWork,
+        displayWorks,
         coverUrl: primaryWork?.coverUrl || '',
         workUrl: primaryWork?.workUrl || '',
         roleLabel: student.roles.length ? student.roles.join(' / ') : '岗位待补充',
@@ -927,26 +971,39 @@ function DisplayPage() {
 
                     <aside className="display-side-panel">
                       <div className="display-side-title">作品封面</div>
-                      {slide.coverUrl ? (
-                        <img
-                          className="display-cover"
-                          src={slide.coverUrl}
-                          alt={`${slide.fullName} 的作品封面`}
-                          loading={shouldPrioritizeCover ? 'eager' : 'lazy'}
-                          decoding="async"
-                        />
-                      ) : (
-                        <div className="display-cover placeholder">暂无作品封面</div>
-                      )}
-                      {slide.workUrl ? (
-                        <a className="display-link" href={slide.workUrl} target="_blank" rel="noreferrer">
-                          查看作品
-                        </a>
-                      ) : (
-                        <div className="display-link">作品链接待补充</div>
-                      )}
+                      <div className="display-work-list">
+                        {slide.displayWorks.length ? (
+                          slide.displayWorks.map((work, workIndex) => (
+                            <article className="display-work-item" key={work.id || `${slide.id}-work-${workIndex}`}>
+                              {work.coverUrl ? (
+                                <img
+                                  className="display-cover"
+                                  src={work.coverUrl}
+                                  alt={`${slide.fullName} 的作品封面 ${workIndex + 1}`}
+                                  loading={shouldPrioritizeCover ? 'eager' : 'lazy'}
+                                  decoding="async"
+                                />
+                              ) : (
+                                <div className="display-cover placeholder">暂无作品封面</div>
+                              )}
+                              <div className="display-work-item-foot">
+                                <span>作品 {work.workIndex ?? workIndex + 1}</span>
+                                {work.workUrl ? (
+                                  <a className="display-link" href={work.workUrl} target="_blank" rel="noreferrer">
+                                    查看作品
+                                  </a>
+                                ) : (
+                                  <div className="display-link">链接待补充</div>
+                                )}
+                              </div>
+                            </article>
+                          ))
+                        ) : (
+                          <div className="display-cover placeholder">暂无作品封面</div>
+                        )}
+                      </div>
                       <div className="display-meta-block">
-                        <span>{slide.workLabel}</span>
+                        <span>{slide.displayWorks.length > 1 ? `${slide.displayWorks.length} 组作品` : slide.workLabel}</span>
                         <strong>{slide.fullName}</strong>
                         <span>{slide.roleLabel}</span>
                       </div>
@@ -1001,17 +1058,14 @@ function DisplayPage() {
 
         {isStarted && slides.length ? (
           <div className="display-control-dock" aria-label="现场播放控制">
-            <button type="button" onClick={goPrevious}>
+            <button type="button" onClick={goPrevious} aria-label="上一位" title="上一位">
               <SkipBack />
-              上一位
             </button>
-            <button type="button" onClick={togglePlaybackPause}>
+            <button type="button" onClick={togglePlaybackPause} aria-label={isPlaybackPaused ? '继续' : '暂停'} title={isPlaybackPaused ? '继续' : '暂停'}>
               {isPlaybackPaused ? <Play /> : <Pause />}
-              {isPlaybackPaused ? '继续' : '暂停'}
             </button>
-            <button className={isAwaitingNext ? 'is-ready' : undefined} type="button" onClick={goNext}>
+            <button className={isAwaitingNext ? 'is-ready' : undefined} type="button" onClick={goNext} aria-label="下一位" title="下一位">
               <SkipForward />
-              下一位
             </button>
           </div>
         ) : null}
@@ -1598,15 +1652,59 @@ function UploadPage() {
     setMessage(sourceStreamRef.current ? '可以重新录制。' : '');
   }
 
+  async function handleVideoFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0] ?? null;
+    event.currentTarget.value = '';
+    if (!file) return;
+
+    if (!file.type.startsWith('video/') && !/\.(mp4|m4v|webm|mov|qt|mkv)$/i.test(file.name)) {
+      setMessage('视频总结只能选择常见视频文件。');
+      return;
+    }
+
+    try {
+      if (recordedUrlRef.current) URL.revokeObjectURL(recordedUrlRef.current);
+      stopCamera();
+
+      const metadata = await readVideoMetadata(file).catch(() => ({ durationMs: 0, width: 0, height: 0 }));
+      const fileName = sanitizeUploadName(file.name || `summary-${Date.now()}.mp4`);
+      const url = URL.createObjectURL(file);
+      recordedUrlRef.current = url;
+      recordedFileNameRef.current = fileName;
+      setRecordedBlob(file);
+      setRecordedUrl(url);
+      setForm((current) => ({
+        ...current,
+        videoSummaryUrl: '',
+        uploadId: '',
+        objectKey: '',
+        sizeBytes: file.size,
+        durationMs: metadata.durationMs,
+        videoWidth: metadata.width,
+        videoHeight: metadata.height,
+      }));
+      setUploadState('idle');
+      setSubmitState('idle');
+      setRecordingState('recorded');
+      setMessage(`已选择视频：${file.name}，文件体积 ${formatFileSize(file.size)}。`);
+    } catch (error) {
+      setRecordedBlob(null);
+      setRecordedUrl('');
+      setUploadState('error');
+      setRecordingState('error');
+      setMessage(error instanceof Error ? error.message : '无法读取视频文件。');
+    }
+  }
+
   async function uploadRecording() {
     if (!recordedBlob) {
       setMessage('请先完成录制。');
-      return;
+      return null;
     }
 
     const filename = recordedFileNameRef.current || sanitizeUploadName(`summary-${Date.now()}.webm`);
     recordedFileNameRef.current = filename;
-    const contentType = 'video/webm';
+    const contentType = inferVideoContentType(recordedBlob, filename);
     setUploadState('uploading');
     setSubmitState('idle');
     setMessage('正在上传视频总结...');
@@ -1625,7 +1723,8 @@ function UploadPage() {
           source: 'review-student-client',
           assetKind: 'video-summary',
           fullName: form.fullName.trim() || 'anonymous',
-          originalMimeType: recordedBlob.type || 'video/webm',
+          originalMimeType: recordedBlob.type || contentType,
+          originalFileName: filename,
         },
         onProgress: (percentage) => {
           setMessage(`正在上传视频... ${percentage}%`);
@@ -1641,6 +1740,7 @@ function UploadPage() {
       }));
       setUploadState('uploaded');
       setMessage('上传成功，视频总结已准备好提交。');
+      return upload;
     } catch (error) {
       setUploadState('error');
       setForm((current) => ({
@@ -1650,6 +1750,7 @@ function UploadPage() {
         objectKey: '',
       }));
       setMessage(getUploadErrorMessage(error));
+      return null;
     }
   }
 
@@ -1683,12 +1784,20 @@ function UploadPage() {
       if (!form.fullName.trim()) throw new Error('请输入学生姓名。');
       if (!form.roles.length) throw new Error('请至少选择一个工作人员职能。');
       if (!form.textSummary.trim()) throw new Error('请输入课程总结。');
-      if (recordingState !== 'recorded') throw new Error('请先拍摄视频总结。');
+      if (recordingState !== 'recorded') throw new Error('请先录制或上传视频总结。');
+      let videoSummaryUrl = form.videoSummaryUrl.trim();
+      let videoUploadId = form.uploadId;
+      let videoObjectKey = form.objectKey;
+      let videoSizeBytes = form.sizeBytes;
       if (uploadState !== 'uploaded') {
         setMessage('正在上传视频总结...');
-        await uploadRecording();
+        const upload = await uploadRecording();
+        videoSummaryUrl = upload?.publicUrl || '';
+        videoUploadId = upload?.uploadId || '';
+        videoObjectKey = upload?.objectKey || '';
+        videoSizeBytes = upload?.sizeBytes || recordedBlob?.size || form.sizeBytes;
       }
-      if (!isHttpsUrl(form.videoSummaryUrl.trim())) throw new Error('视频上传失败，请重试。');
+      if (!isHttpsUrl(videoSummaryUrl)) throw new Error('视频上传失败，请重试。');
       const works = await buildWorksPayload(workSlotsRef.current, (status) => setMessage(status));
 
       setMessage('正在保存提交内容...');
@@ -1698,10 +1807,10 @@ function UploadPage() {
           fullName: form.fullName.trim(),
           roles: normalizeRoles(form.roles),
           textSummary: form.textSummary.trim(),
-          videoSummaryUrl: form.videoSummaryUrl.trim(),
-          videoUploadId: form.uploadId,
-          videoObjectKey: form.objectKey,
-          videoSizeBytes: form.sizeBytes,
+          videoSummaryUrl,
+          videoUploadId,
+          videoObjectKey,
+          videoSizeBytes,
           videoDurationMs: form.durationMs,
           videoWidth: form.videoWidth,
           videoHeight: form.videoHeight,
@@ -1723,7 +1832,7 @@ function UploadPage() {
       lastWorkFileRefs.current = [null, null];
       lastDraftSignatureRef.current = buildDraftSignature(cloneInitialForm(), createInitialWorkSlots());
       clearDraftSnapshot();
-      void clearDraftBlobs().catch(() => {});
+      await clearDraftBlobs();
       setForm(initialForm);
       clearWorkSlots();
       setUploadState('idle');
@@ -1816,7 +1925,7 @@ function UploadPage() {
         <div className="camera-recorder">
           <div className="subsection-heading">
             <span>视频总结</span>
-            <small>录制后上传</small>
+            <small>录制或上传</small>
           </div>
           <div className="camera-preview">
             {recordedUrl || form.videoSummaryUrl ? (
@@ -1830,12 +1939,22 @@ function UploadPage() {
           </div>
 
           <div className="recording-meta">
-            <span>输出：最高 1280 x 720</span>
-            <span>格式：WebM</span>
-            <span>体积：{form.sizeBytes ? formatFileSize(form.sizeBytes) : '等待录制'}</span>
+            <span>录制：最高 1280 x 720</span>
+            <span>上传：MP4 / WebM / MOV</span>
+            <span>体积：{form.sizeBytes ? formatFileSize(form.sizeBytes) : '等待视频'}</span>
           </div>
 
           <div className="recorder-actions">
+            <label className="ghost-action video-file-action" htmlFor="summary-video-file">
+              <UploadCloud />
+              选择视频文件
+              <input
+                id="summary-video-file"
+                type="file"
+                accept="video/*,.mp4,.m4v,.webm,.mov,.qt,.mkv"
+                onChange={(event) => void handleVideoFileChange(event)}
+              />
+            </label>
             {recordingState === 'idle' || recordingState === 'error' ? (
               <button className="ghost-action" type="button" onClick={() => void startCamera()}>
                 <Camera />
@@ -1858,11 +1977,11 @@ function UploadPage() {
               <>
                 <button className="ghost-action" type="button" onClick={resetRecording}>
                   <RotateCcw />
-                  重新录制
+                  清除视频
                 </button>
                 <button className="primary-action" type="button" onClick={() => void uploadRecording()} disabled={uploadState === 'uploading' || uploadState === 'uploaded'}>
                   {uploadState === 'uploading' ? <Loader2 className="spin" /> : <UploadCloud />}
-                  {uploadState === 'uploaded' ? '视频已上传' : '上传录制视频'}
+                  {uploadState === 'uploaded' ? '视频已上传' : '上传视频'}
                 </button>
               </>
             ) : null}

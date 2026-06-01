@@ -3,6 +3,7 @@ build/
 dist/
 coverage/
 tasks/
+HANDOFF.md
 .DS_Store
 *.log
 .env*
