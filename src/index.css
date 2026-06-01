@@ -1517,9 +1517,27 @@ textarea:focus {
 
 .recorder-actions {
   grid-area: actions;
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
+}
+
+.camera-recorder .recorder-actions .primary-action,
+.camera-recorder .recorder-actions .ghost-action {
+  width: 100%;
+}
+
+.video-file-action {
+  position: relative;
+  cursor: pointer;
+}
+
+.video-file-action input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .primary-action,
