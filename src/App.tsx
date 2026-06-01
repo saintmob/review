@@ -720,9 +720,11 @@ function DisplayPage() {
   const slides = useMemo(() => {
     return reviewStudents.map((student) => {
       const primaryWork = getStudentPrimaryWork(student);
+      const displayWorks = student.works.filter((work) => work.coverUrl || work.workUrl).slice(0, 2);
       return {
         ...student,
         primaryWork,
+        displayWorks,
         coverUrl: primaryWork?.coverUrl || '',
         workUrl: primaryWork?.workUrl || '',
         roleLabel: student.roles.length ? student.roles.join(' / ') : '岗位待补充',
@@ -969,26 +971,39 @@ function DisplayPage() {
 
                     <aside className="display-side-panel">
                       <div className="display-side-title">作品封面</div>
-                      {slide.coverUrl ? (
-                        <img
-                          className="display-cover"
-                          src={slide.coverUrl}
-                          alt={`${slide.fullName} 的作品封面`}
-                          loading={shouldPrioritizeCover ? 'eager' : 'lazy'}
-                          decoding="async"
-                        />
-                      ) : (
-                        <div className="display-cover placeholder">暂无作品封面</div>
-                      )}
-                      {slide.workUrl ? (
-                        <a className="display-link" href={slide.workUrl} target="_blank" rel="noreferrer">
-                          查看作品
-                        </a>
-                      ) : (
-                        <div className="display-link">作品链接待补充</div>
-                      )}
+                      <div className="display-work-list">
+                        {slide.displayWorks.length ? (
+                          slide.displayWorks.map((work, workIndex) => (
+                            <article className="display-work-item" key={work.id || `${slide.id}-work-${workIndex}`}>
+                              {work.coverUrl ? (
+                                <img
+                                  className="display-cover"
+                                  src={work.coverUrl}
+                                  alt={`${slide.fullName} 的作品封面 ${workIndex + 1}`}
+                                  loading={shouldPrioritizeCover ? 'eager' : 'lazy'}
+                                  decoding="async"
+                                />
+                              ) : (
+                                <div className="display-cover placeholder">暂无作品封面</div>
+                              )}
+                              <div className="display-work-item-foot">
+                                <span>作品 {work.workIndex ?? workIndex + 1}</span>
+                                {work.workUrl ? (
+                                  <a className="display-link" href={work.workUrl} target="_blank" rel="noreferrer">
+                                    查看作品
+                                  </a>
+                                ) : (
+                                  <div className="display-link">链接待补充</div>
+                                )}
+                              </div>
+                            </article>
+                          ))
+                        ) : (
+                          <div className="display-cover placeholder">暂无作品封面</div>
+                        )}
+                      </div>
                       <div className="display-meta-block">
-                        <span>{slide.workLabel}</span>
+                        <span>{slide.displayWorks.length > 1 ? `${slide.displayWorks.length} 组作品` : slide.workLabel}</span>
                         <strong>{slide.fullName}</strong>
                         <span>{slide.roleLabel}</span>
                       </div>
@@ -1043,17 +1058,14 @@ function DisplayPage() {
 
         {isStarted && slides.length ? (
           <div className="display-control-dock" aria-label="现场播放控制">
-            <button type="button" onClick={goPrevious}>
+            <button type="button" onClick={goPrevious} aria-label="上一位" title="上一位">
               <SkipBack />
-              上一位
             </button>
-            <button type="button" onClick={togglePlaybackPause}>
+            <button type="button" onClick={togglePlaybackPause} aria-label={isPlaybackPaused ? '继续' : '暂停'} title={isPlaybackPaused ? '继续' : '暂停'}>
               {isPlaybackPaused ? <Play /> : <Pause />}
-              {isPlaybackPaused ? '继续' : '暂停'}
             </button>
-            <button className={isAwaitingNext ? 'is-ready' : undefined} type="button" onClick={goNext}>
+            <button className={isAwaitingNext ? 'is-ready' : undefined} type="button" onClick={goNext} aria-label="下一位" title="下一位">
               <SkipForward />
-              下一位
             </button>
           </div>
         ) : null}
