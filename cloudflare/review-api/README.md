@@ -17,6 +17,12 @@
 - `POST /api/students`
 - `POST /api/uploads`
 - `GET /api/media/:key`
+- `POST /api/admin/login`
+- `POST /api/admin/logout`
+- `GET /api/admin/session`
+- `GET /api/admin/students`
+- `PUT /api/admin/students/:id`
+- `DELETE /api/admin/students/:id`
 
 ## 本地开发
 
@@ -43,3 +49,4 @@
 - 上传接口是单次直传到 Worker，不再拆 `init / PUT / complete` 三步。
 - `GET /api/bootstrap` 已经把节目单、作品、总结、学生列表聚合成一次请求。
 - 前端提交时会继续使用 `videoSummaryUrl` 和每组 `workUrl + coverUrl` 的结构，不需要再引入 Firebase 或 Vercel Blob。
+- 管理员密码保存在 D1 的哈希表中，源码不保存明文密码；管理接口使用 Bearer token 会话，并记录失败登录次数。

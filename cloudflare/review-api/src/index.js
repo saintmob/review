@@ -1,6 +1,7 @@
-import { badRequest, json, methodNotAllowed, noContent, notFound, text } from './http.js';
-import { createStudent, createUploadRecord, getBootstrapData, getProgram, listStudents, listSummaries, listWorks } from './db.js';
+import { applyCors, badRequest, json, methodNotAllowed, noContent, notFound, text } from './http.js';
+import { createStudent, createUploadRecord, deleteStudent, getBootstrapData, getProgram, listStudents, listSummaries, listWorks, updateStudent } from './db.js';
 import { buildMediaUrl, getMediaObject, isRenderableMedia, makeMediaKey, parseRangeHeader, putMedia } from './r2.js';
+import { createAdminSession, requireAdminSession, revokeAdminSession, verifyAdminPassword } from './auth.js';
 
 const DEFAULT_MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
 
@@ -85,6 +86,47 @@ function normalizeStudentPayload(body) {
     videoHeight: Number(body?.videoHeight || 0),
     works: works.map((work, index) => normalizeWorkForCreate(work, index)),
   };
+}
+
+function normalizeAdminStudentPayload(body) {
+  const works = Array.isArray(body?.works) ? body.works.slice(0, 2) : [];
+  return {
+    fullName: normalizeString(body?.fullName),
+    roles: Array.isArray(body?.roles) ? body.roles.map((item) => normalizeString(item)).filter(Boolean) : [],
+    textSummary: normalizeString(body?.textSummary),
+    videoSummaryUrl: normalizeString(body?.videoSummaryUrl),
+    works: works.map((work, index) => ({
+      ...normalizeWorkForCreate(work, index),
+      id: normalizeString(work?.id),
+    })),
+  };
+}
+
+function validateAdminStudentPayload(request, payload) {
+  if (!payload.fullName) {
+    return badRequest(request, '请输入学生姓名');
+  }
+  if (!payload.roles.length) {
+    return badRequest(request, '请至少选择一个工作人员职能');
+  }
+  if (!payload.textSummary) {
+    return badRequest(request, '请填写职位感悟');
+  }
+  if (!payload.videoSummaryUrl || !/^https?:\/\//i.test(payload.videoSummaryUrl)) {
+    return badRequest(request, '视频总结链接必须是有效的 URL');
+  }
+  if (!payload.works.length) {
+    return badRequest(request, '请至少保留一组作品');
+  }
+  for (const [index, work] of payload.works.entries()) {
+    if (!work.workUrl || !/^https?:\/\//i.test(work.workUrl)) {
+      return badRequest(request, `作品 ${index + 1} 的网页链接必须是有效的 URL`);
+    }
+    if (!work.coverUrl || !/^https?:\/\//i.test(work.coverUrl)) {
+      return badRequest(request, `作品 ${index + 1} 的封面链接必须是有效的 URL`);
+    }
+  }
+  return null;
 }
 
 async function handleUpload(request, env) {
@@ -173,7 +215,7 @@ async function handleMedia(request, env, key) {
   object.writeHttpMetadata(headers);
   headers.set('Cache-Control', 'public, max-age=31536000, immutable');
   headers.set('Accept-Ranges', 'bytes');
-  headers.set('Access-Control-Allow-Origin', '*');
+  applyCors(request, headers);
 
   const hasRange = request.headers.has('Range');
   const status = hasRange ? 206 : 200;
@@ -248,6 +290,111 @@ async function handleCreateStudent(request, env) {
   return json(request, { ok: true, student }, { status: 201 });
 }
 
+async function handleAdminLogin(request, env) {
+  const body = await parseJsonBody(request);
+  if (!body) {
+    return badRequest(request, '请求体必须是 JSON');
+  }
+
+  const passwordResult = await verifyAdminPassword(env.DB, request, body.password);
+  if (!passwordResult.ok) {
+    return json(request, { error: passwordResult.error }, { status: passwordResult.status });
+  }
+
+  const session = await createAdminSession(env.DB);
+  return json(request, { ok: true, token: session.token, expiresAt: session.expiresAt }, {
+    headers: {
+      'Cache-Control': 'no-store',
+    },
+  });
+}
+
+async function requireAdmin(request, env) {
+  const session = await requireAdminSession(env.DB, request);
+  if (!session) {
+    return null;
+  }
+  return session;
+}
+
+async function handleAdminStudents(request, env) {
+  const session = await requireAdmin(request, env);
+  if (!session) {
+    return json(request, { error: '需要管理员登录' }, { status: 401 });
+  }
+
+  const students = await listStudents(env.DB, 500);
+  return json(request, { students }, {
+    headers: {
+      'Cache-Control': 'no-store',
+    },
+  });
+}
+
+async function handleAdminUpdateStudent(request, env, studentId) {
+  const session = await requireAdmin(request, env);
+  if (!session) {
+    return json(request, { error: '需要管理员登录' }, { status: 401 });
+  }
+
+  const body = await parseJsonBody(request);
+  if (!body) {
+    return badRequest(request, '请求体必须是 JSON');
+  }
+
+  const payload = normalizeAdminStudentPayload(body);
+  const validationError = validateAdminStudentPayload(request, payload);
+  if (validationError) {
+    return validationError;
+  }
+
+  const student = await updateStudent(env.DB, studentId, {
+    ...payload,
+    createdAt: normalizeString(body.createdAt),
+  });
+  return json(request, { ok: true, student }, {
+    headers: {
+      'Cache-Control': 'no-store',
+    },
+  });
+}
+
+async function handleAdminDeleteStudent(request, env, studentId) {
+  const session = await requireAdmin(request, env);
+  if (!session) {
+    return json(request, { error: '需要管理员登录' }, { status: 401 });
+  }
+
+  await deleteStudent(env.DB, studentId);
+  return json(request, { ok: true }, {
+    headers: {
+      'Cache-Control': 'no-store',
+    },
+  });
+}
+
+async function handleAdminSession(request, env) {
+  const session = await requireAdmin(request, env);
+  if (!session) {
+    return json(request, { authenticated: false }, { status: 401 });
+  }
+
+  return json(request, { authenticated: true, expiresAt: session.expires_at }, {
+    headers: {
+      'Cache-Control': 'no-store',
+    },
+  });
+}
+
+async function handleAdminLogout(request, env) {
+  await revokeAdminSession(env.DB, request);
+  return json(request, { ok: true }, {
+    headers: {
+      'Cache-Control': 'no-store',
+    },
+  });
+}
+
 export default {
   async fetch(request, env) {
     try {
@@ -286,6 +433,33 @@ export default {
 
       if (url.pathname === '/api/students' && request.method === 'POST') {
         return handleCreateStudent(request, env);
+      }
+
+      if (url.pathname === '/api/admin/login' && request.method === 'POST') {
+        return handleAdminLogin(request, env);
+      }
+
+      if (url.pathname === '/api/admin/logout' && request.method === 'POST') {
+        return handleAdminLogout(request, env);
+      }
+
+      if (url.pathname === '/api/admin/session' && request.method === 'GET') {
+        return handleAdminSession(request, env);
+      }
+
+      if (url.pathname === '/api/admin/students' && request.method === 'GET') {
+        return handleAdminStudents(request, env);
+      }
+
+      if (url.pathname.startsWith('/api/admin/students/')) {
+        const studentId = decodeURIComponent(url.pathname.slice('/api/admin/students/'.length));
+        if (request.method === 'PUT') {
+          return handleAdminUpdateStudent(request, env, studentId);
+        }
+        if (request.method === 'DELETE') {
+          return handleAdminDeleteStudent(request, env, studentId);
+        }
+        return methodNotAllowed(request, ['PUT', 'DELETE', 'OPTIONS']);
       }
 
       if (url.pathname === '/api/uploads' && request.method === 'POST') {

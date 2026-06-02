@@ -236,6 +236,102 @@ export async function createStudent(db, input) {
   };
 }
 
+export async function updateStudent(db, studentId, input) {
+  const id = String(studentId || '').trim();
+  const updatedAt = new Date().toISOString();
+  const roles = normalizeRoles(input.roles);
+  const works = Array.isArray(input.works) ? input.works : [];
+  const workRecords = works.map((work, index) => ({
+    id: String(work.id || '').trim() || crypto.randomUUID(),
+    studentId: id,
+    studentName: String(input.fullName || '').trim(),
+    workIndex: toNumber(work.workIndex, index + 1),
+    workUrl: String(work.workUrl || '').trim(),
+    coverUrl: String(work.coverUrl || '').trim(),
+    coverUploadId: String(work.coverUploadId || '').trim(),
+    coverObjectKey: String(work.coverObjectKey || '').trim(),
+    coverFileName: String(work.coverFileName || '').trim(),
+  }));
+
+  await db.batch([
+    db
+      .prepare(
+        `UPDATE students
+         SET full_name = ?,
+             roles_json = ?,
+             text_summary = ?,
+             video_summary_url = ?,
+             updated_at = ?
+         WHERE id = ?`,
+      )
+      .bind(
+        String(input.fullName || '').trim(),
+        JSON.stringify(roles),
+        String(input.textSummary || '').trim(),
+        String(input.videoSummaryUrl || '').trim(),
+        updatedAt,
+        id,
+      ),
+    db.prepare('DELETE FROM works WHERE student_id = ?').bind(id),
+    ...workRecords.map((work) =>
+      db
+        .prepare(
+          `INSERT INTO works
+            (id, student_id, student_name, work_index, work_url, cover_url, cover_upload_id, cover_object_key, cover_file_name, metadata_json, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(
+          work.id,
+          work.studentId,
+          work.studentName,
+          work.workIndex,
+          work.workUrl,
+          work.coverUrl,
+          work.coverUploadId,
+          work.coverObjectKey,
+          work.coverFileName,
+          JSON.stringify({
+            source: 'admin-editor',
+            studentId: id,
+          }),
+          updatedAt,
+          updatedAt,
+        ),
+    ),
+  ]);
+
+  return normalizeStudentRow(
+    {
+      id,
+      full_name: String(input.fullName || '').trim(),
+      roles_json: JSON.stringify(roles),
+      text_summary: String(input.textSummary || '').trim(),
+      video_summary_url: String(input.videoSummaryUrl || '').trim(),
+      created_at: input.createdAt || updatedAt,
+      updated_at: updatedAt,
+    },
+    normalizeWorkRows(
+      workRecords.map((work) => ({
+        id: work.id,
+        student_id: work.studentId,
+        student_name: work.studentName,
+        work_index: work.workIndex,
+        work_url: work.workUrl,
+        cover_url: work.coverUrl,
+        created_at: updatedAt,
+      })),
+    ),
+  );
+}
+
+export async function deleteStudent(db, studentId) {
+  const id = String(studentId || '').trim();
+  await db.batch([
+    db.prepare('DELETE FROM works WHERE student_id = ?').bind(id),
+    db.prepare('DELETE FROM students WHERE id = ?').bind(id),
+  ]);
+}
+
 export async function createUploadRecord(db, input) {
   const createdAt = new Date().toISOString();
   const upload = {

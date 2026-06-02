@@ -1,18 +1,19 @@
 function corsHeaders(request) {
   const origin = request.headers.get('Origin');
+  const requestHeaders = request.headers.get('Access-Control-Request-Headers');
   const allowOrigin = origin || '*';
 
   return {
     'Access-Control-Allow-Origin': allowOrigin,
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS, HEAD, PUT, DELETE',
-    'Access-Control-Allow-Headers': 'Accept, Authorization, Content-Type, Origin, Range, X-Requested-With, X-Checkin-Device-Id, X-Checkin-Ticket',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS, HEAD, PUT, PATCH, DELETE',
+    'Access-Control-Allow-Headers': requestHeaders || 'Accept, Authorization, Content-Type, Origin, Range, X-Requested-With, X-Checkin-Device-Id, X-Checkin-Ticket',
     'Access-Control-Expose-Headers': 'Accept-Ranges, Content-Length, Content-Range, Content-Type, ETag, Location',
     'Access-Control-Max-Age': '86400',
-    'Vary': 'Origin',
+    'Vary': 'Origin, Access-Control-Request-Method, Access-Control-Request-Headers',
   };
 }
 
-function applyCors(request, headers) {
+export function applyCors(request, headers) {
   for (const [key, value] of Object.entries(corsHeaders(request))) {
     headers.set(key, value);
   }

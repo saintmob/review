@@ -1227,6 +1227,118 @@ button {
   padding: clamp(16px, 2.4vw, 24px);
 }
 
+.admin-page {
+  width: min(100%, 1280px);
+}
+
+.admin-login-panel {
+  max-width: 560px;
+}
+
+.admin-console {
+  display: grid;
+  grid-template-columns: minmax(230px, 0.34fr) minmax(0, 1fr);
+  gap: 14px;
+  min-width: 0;
+}
+
+.admin-list-panel,
+.admin-edit-panel {
+  border: 1px solid rgba(124, 232, 255, 0.22);
+  background: rgba(4, 10, 25, 0.68);
+  box-shadow:
+    0 0 0 1px rgba(158, 118, 255, 0.1) inset,
+    0 24px 80px rgba(0, 0, 0, 0.38),
+    0 0 80px rgba(45, 170, 255, 0.14);
+  backdrop-filter: blur(18px);
+}
+
+.admin-list-panel {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 16px;
+  min-width: 0;
+}
+
+.admin-edit-panel {
+  min-width: 0;
+}
+
+.admin-record-list {
+  display: grid;
+  gap: 8px;
+  max-height: min(680px, calc(100svh - 220px));
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.admin-record-item {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  border: 1px solid rgba(118, 238, 255, 0.16);
+  padding: 11px 12px;
+  color: rgba(226, 247, 255, 0.76);
+  background: rgba(3, 8, 18, 0.48);
+  text-align: left;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+
+.admin-record-item strong,
+.admin-record-item span,
+.admin-record-item small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.admin-record-item strong {
+  color: #f7fcff;
+  font-size: 0.95rem;
+}
+
+.admin-record-item span,
+.admin-record-item small {
+  color: rgba(179, 242, 255, 0.62);
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
+.admin-record-item.active,
+.admin-record-item:hover,
+.admin-record-item:focus-visible {
+  border-color: rgba(185, 251, 255, 0.82);
+  box-shadow: 0 0 26px rgba(90, 239, 255, 0.16);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.admin-refresh-button,
+.admin-logout-button {
+  min-height: 40px;
+  padding-inline: 12px;
+}
+
+.admin-work-card {
+  align-content: start;
+}
+
+.admin-edit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.danger-action {
+  border-color: rgba(255, 122, 148, 0.48);
+  background:
+    linear-gradient(90deg, rgba(255, 94, 125, 0.14), rgba(117, 87, 255, 0.2)),
+    rgba(3, 8, 18, 0.72);
+}
+
 .console-heading,
 .section-heading {
   display: flex;
@@ -2149,6 +2261,14 @@ audio {
   .upload-page,
   .featured-player {
     grid-template-columns: 1fr;
+  }
+
+  .admin-console {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-record-list {
+    max-height: none;
   }
 
   .hero-grid,

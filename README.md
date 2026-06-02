@@ -11,6 +11,8 @@
 
 浏览器上传时不再直连 Firebase 或 Vercel Blob，所有文件都先发到 Worker，再由 Worker 写入 R2。
 
+`/admin` 是管理员内容页，登录后可编辑或删除学生提交内容。管理员密码不写入源码，由 Cloudflare D1 保存哈希。
+
 默认活动后端：
 
 ```text
@@ -39,6 +41,8 @@ https://review-api.saintmob.workers.dev
 公开页：http://localhost:3000/
 
 学生上传页：http://localhost:3000/upload
+
+管理员内容页：http://localhost:3000/admin
 
 ## 前端行为
 

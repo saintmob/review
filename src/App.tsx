@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type FormEvent } from 'react';
-import { Camera, CheckCircle2, Circle, Home, LibraryBig, Loader2, MonitorPlay, Pause, Play, RefreshCw, RotateCcw, SkipBack, SkipForward, Square, UploadCloud, UserRound, Waves } from 'lucide-react';
+import { Camera, CheckCircle2, Circle, Home, LibraryBig, Loader2, LockKeyhole, LogOut, MonitorPlay, Pause, Pencil, Play, RefreshCw, RotateCcw, Save, ShieldCheck, SkipBack, SkipForward, Square, Trash2, UploadCloud, UserRound, Waves } from 'lucide-react';
 
 type Program = {
   text: string;
@@ -63,10 +63,25 @@ type UploadResponse = {
 type UploadState = 'idle' | 'uploading' | 'uploaded' | 'error';
 type SubmitState = 'idle' | 'submitting' | 'submitted' | 'error';
 type RecordingState = 'idle' | 'camera-ready' | 'recording' | 'recorded' | 'error';
+type AdminDraft = {
+  id: string;
+  fullName: string;
+  roles: string[];
+  textSummary: string;
+  videoSummaryUrl: string;
+  works: Array<{
+    id?: string;
+    workIndex: number;
+    workUrl: string;
+    coverUrl: string;
+  }>;
+  createdAt: string;
+};
 
 const defaultEventApiBase = 'https://review-api.saintmob.workers.dev';
 const eventApiBase = (import.meta.env.VITE_REVIEW_API_BASE || defaultEventApiBase).replace(/\/+$/, '');
 const roleOptions = Array.from(new Set(['音乐', '交互', '视觉', '导演', '海报', '字幕旁白', '技术支持', '场务', '指导老师']));
+const ADMIN_TOKEN_KEY = 'review-admin-token-v1';
 
 const initialForm = {
   fullName: '',
@@ -513,10 +528,14 @@ async function readJsonResponse<T>(response: Response): Promise<T> {
   }
 }
 
-async function api<T>(path: string, options: { method?: string; body?: unknown | FormData } = {}) {
+async function api<T>(path: string, options: { method?: string; body?: unknown | FormData; headers?: Record<string, string> } = {}) {
+  const headers = {
+    ...(options.body && !(options.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
+    ...(options.headers || {}),
+  };
   const response = await fetch(buildApiUrl(path), {
     method: options.method ?? 'GET',
-    headers: options.body && !(options.body instanceof FormData) ? { 'Content-Type': 'application/json' } : undefined,
+    headers: Object.keys(headers).length ? headers : undefined,
     body: options.body instanceof FormData ? options.body : options.body ? JSON.stringify(options.body) : undefined,
   });
   const payload = await readJsonResponse<T & { error?: string }>(response);
@@ -526,6 +545,33 @@ async function api<T>(path: string, options: { method?: string; body?: unknown |
   }
 
   return payload;
+}
+
+function getStoredAdminToken() {
+  try {
+    return sessionStorage.getItem(ADMIN_TOKEN_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
+function setStoredAdminToken(token: string) {
+  try {
+    if (token) {
+      sessionStorage.setItem(ADMIN_TOKEN_KEY, token);
+    } else {
+      sessionStorage.removeItem(ADMIN_TOKEN_KEY);
+    }
+  } catch {
+    // Session storage can be unavailable in locked-down browsers.
+  }
+}
+
+function adminApi<T>(path: string, token: string, options: { method?: string; body?: unknown } = {}) {
+  return api<T>(path, {
+    ...options,
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
 }
 
 async function uploadFileToWorker(input: {
@@ -631,21 +677,22 @@ async function buildWorksPayload(workSlots: WorkSlotState[], onStatus?: (message
 
 function App() {
   const pathname = window.location.pathname.replace(/\/+$/, '');
-  const isAdminPage = pathname === '/admin' || pathname === '/upload';
+  const isAdminPage = pathname === '/admin';
+  const isUploadPage = pathname === '/upload';
   const isDisplayPage = pathname === '/display' || pathname === '/videos' || pathname === '/video-carousel';
   const isPublicPage = pathname === '/public';
-  const pageKey = isAdminPage ? 'upload' : isDisplayPage ? 'display' : isPublicPage ? 'public' : 'home';
+  const pageKey = isAdminPage ? 'admin' : isUploadPage ? 'upload' : isDisplayPage ? 'display' : isPublicPage ? 'public' : 'home';
 
   return (
     <main className={`app page-${pageKey}`}>
       <AmbientStage />
       <AppNav activePage={pageKey} />
-      {isAdminPage ? <UploadPage /> : isDisplayPage ? <DisplayPage /> : isPublicPage ? <PlaybackPage /> : <LandingPage />}
+      {isAdminPage ? <AdminPage /> : isUploadPage ? <UploadPage /> : isDisplayPage ? <DisplayPage /> : isPublicPage ? <PlaybackPage /> : <LandingPage />}
     </main>
   );
 }
 
-function AppNav({ activePage }: { activePage: 'home' | 'display' | 'public' | 'upload' }) {
+function AppNav({ activePage }: { activePage: 'home' | 'display' | 'public' | 'upload' | 'admin' }) {
   const navItems = [
     { key: 'home', label: '首页', href: '/', icon: Home },
     { key: 'display', label: '现场', href: '/display', icon: MonitorPlay },
@@ -1262,6 +1309,363 @@ function PlaybackPage() {
         )}
       </section>
     </>
+  );
+}
+
+function createAdminDraft(student: StudentRecord): AdminDraft {
+  const works = [0, 1].map((index) => {
+    const work = student.works[index];
+    return {
+      id: work?.id,
+      workIndex: work?.workIndex ?? index + 1,
+      workUrl: work?.workUrl || '',
+      coverUrl: work?.coverUrl || '',
+    };
+  });
+
+  return {
+    id: student.id,
+    fullName: student.fullName,
+    roles: normalizeRoles(student.roles),
+    textSummary: student.textSummary,
+    videoSummaryUrl: student.videoSummaryUrl,
+    works,
+    createdAt: student.createdAt,
+  };
+}
+
+function AdminPage() {
+  const [token, setToken] = useState(getStoredAdminToken);
+  const [password, setPassword] = useState('');
+  const [students, setStudents] = useState<StudentRecord[]>([]);
+  const [selectedId, setSelectedId] = useState('');
+  const [draft, setDraft] = useState<AdminDraft | null>(null);
+  const [isLoading, setIsLoading] = useState(Boolean(token));
+  const [isSaving, setIsSaving] = useState(false);
+  const [message, setMessage] = useState('');
+
+  async function loadAdminStudents(activeToken = token) {
+    if (!activeToken) return;
+    setIsLoading(true);
+    try {
+      const payload = await adminApi<{ students: StudentRecord[] }>('/api/admin/students', activeToken);
+      const nextStudents = payload.students ?? [];
+      setStudents(nextStudents);
+      const nextSelected = nextStudents.find((student) => student.id === selectedId) || nextStudents[0] || null;
+      setSelectedId(nextSelected?.id || '');
+      setDraft(nextSelected ? createAdminDraft(nextSelected) : null);
+      setMessage(nextStudents.length ? '管理内容已更新' : '暂无提交内容');
+    } catch (error) {
+      setStoredAdminToken('');
+      setToken('');
+      setMessage(error instanceof Error ? error.message : '管理员登录已失效');
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (token) {
+      void loadAdminStudents(token);
+    }
+  }, []);
+
+  async function handleLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsLoading(true);
+    setMessage('正在登录...');
+    try {
+      const payload = await api<{ ok?: boolean; token: string; expiresAt: string }>('/api/admin/login', {
+        method: 'POST',
+        body: { password },
+      });
+      if (!payload.token) throw new Error('登录响应缺少会话');
+      setStoredAdminToken(payload.token);
+      setToken(payload.token);
+      setPassword('');
+      setMessage('登录成功');
+      await loadAdminStudents(payload.token);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : '登录失败');
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function handleLogout() {
+    if (token) {
+      await adminApi('/api/admin/logout', token, { method: 'POST' }).catch(() => {});
+    }
+    setStoredAdminToken('');
+    setToken('');
+    setStudents([]);
+    setSelectedId('');
+    setDraft(null);
+    setMessage('已退出管理');
+  }
+
+  function selectStudent(student: StudentRecord) {
+    setSelectedId(student.id);
+    setDraft(createAdminDraft(student));
+    setMessage('');
+  }
+
+  function toggleDraftRole(role: string) {
+    setDraft((current) => {
+      if (!current) return current;
+      const roles = current.roles.includes(role) ? current.roles.filter((item) => item !== role) : [...current.roles, role];
+      return { ...current, roles: normalizeRoles(roles) };
+    });
+  }
+
+  async function handleSave(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!draft || !token) return;
+    setIsSaving(true);
+    setMessage('正在保存...');
+    try {
+      const works = draft.works
+        .map((work, index) => ({
+          ...work,
+          workIndex: index + 1,
+          workUrl: work.workUrl.trim(),
+          coverUrl: work.coverUrl.trim(),
+        }))
+        .filter((work) => work.workUrl || work.coverUrl);
+      const payload = await adminApi<{ ok?: boolean; student: StudentRecord }>(`/api/admin/students/${encodeURIComponent(draft.id)}`, token, {
+        method: 'PUT',
+        body: {
+          fullName: draft.fullName.trim(),
+          roles: normalizeRoles(draft.roles),
+          textSummary: draft.textSummary.trim(),
+          videoSummaryUrl: draft.videoSummaryUrl.trim(),
+          works,
+          createdAt: draft.createdAt,
+        },
+      });
+      const updated = payload.student;
+      setStudents((current) => current.map((student) => (student.id === updated.id ? updated : student)));
+      setDraft(createAdminDraft(updated));
+      setMessage('保存成功');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : '保存失败');
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!draft || !token) return;
+    if (!window.confirm(`确认删除 ${draft.fullName || '这条提交'}？删除后公开页将不再显示该内容。`)) return;
+    setIsSaving(true);
+    setMessage('正在删除...');
+    try {
+      await adminApi(`/api/admin/students/${encodeURIComponent(draft.id)}`, token, { method: 'DELETE' });
+      const remaining = students.filter((student) => student.id !== draft.id);
+      setStudents(remaining);
+      const nextSelected = remaining[0] || null;
+      setSelectedId(nextSelected?.id || '');
+      setDraft(nextSelected ? createAdminDraft(nextSelected) : null);
+      setMessage('删除成功');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : '删除失败');
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  if (!token) {
+    return (
+      <section className="upload-page admin-page page-fade">
+        <div className="upload-intro">
+          <p className="eyebrow">管理页</p>
+          <h1 className="upload-title">内容管理</h1>
+          <p className="subtitle">输入管理员密码后编辑或删除学生提交内容。</p>
+          <div className="upload-status-strip" aria-label="管理能力">
+            <span>D1 密码</span>
+            <span>失败限流</span>
+            <span>会话保护</span>
+          </div>
+        </div>
+
+        <form className="upload-console admin-login-panel" onSubmit={handleLogin}>
+          <div className="console-heading">
+            <div>
+              <p className="eyebrow">登录</p>
+              <h2>管理员入口</h2>
+            </div>
+            <LockKeyhole />
+          </div>
+          <label className="field-label" htmlFor="admin-password">管理员密码</label>
+          <div className="input-wrap">
+            <ShieldCheck aria-hidden="true" />
+            <input
+              id="admin-password"
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              autoComplete="current-password"
+              required
+            />
+          </div>
+          {message && <p className={`form-message ${message.includes('不正确') || message.includes('过多') || message.includes('失败') ? 'is-error' : ''}`}>{message}</p>}
+          <button className="primary-action" type="submit" disabled={isLoading}>
+            {isLoading ? <Loader2 className="spin" /> : <LockKeyhole />}
+            登录
+          </button>
+        </form>
+      </section>
+    );
+  }
+
+  return (
+    <section className="upload-page admin-page page-fade">
+      <div className="upload-intro">
+        <p className="eyebrow">管理页</p>
+        <h1 className="upload-title">内容管理</h1>
+        <p className="subtitle">编辑学生提交信息，或删除不需要展示的内容。</p>
+        <div className="upload-status-strip" aria-label="管理状态">
+          <span>{students.length} 条提交</span>
+          <span>{draft ? '已选择' : '未选择'}</span>
+        </div>
+        <button className="ghost-action admin-logout-button" type="button" onClick={() => void handleLogout()}>
+          <LogOut />
+          退出
+        </button>
+      </div>
+
+      <div className="admin-console">
+        <div className="admin-list-panel">
+          <div className="section-heading archive-heading">
+            <div>
+              <p className="eyebrow">记录</p>
+              <h2>提交列表</h2>
+            </div>
+            <button className="ghost-action admin-refresh-button" type="button" onClick={() => void loadAdminStudents()} disabled={isLoading}>
+              {isLoading ? <Loader2 className="spin" /> : <RefreshCw />}
+              刷新
+            </button>
+          </div>
+          <div className="admin-record-list">
+            {students.map((student) => (
+              <button className={selectedId === student.id ? 'admin-record-item active' : 'admin-record-item'} type="button" key={student.id} onClick={() => selectStudent(student)}>
+                <strong>{student.fullName || '未命名同学'}</strong>
+                <span>{student.roles.length ? student.roles.join(' / ') : '未选职能'}</span>
+                <small>{formatTimestamp(student.createdAt)}</small>
+              </button>
+            ))}
+            {!students.length ? <p className="empty-state">暂无提交内容。</p> : null}
+          </div>
+        </div>
+
+        <form className="upload-console admin-edit-panel" onSubmit={handleSave}>
+          <div className="console-heading">
+            <div>
+              <p className="eyebrow">编辑</p>
+              <h2>{draft ? draft.fullName || '未命名同学' : '选择一条记录'}</h2>
+            </div>
+            <Pencil />
+          </div>
+
+          {draft ? (
+            <>
+              <div className="identity-role-grid">
+                <div className="identity-field">
+                  <label className="field-label" htmlFor="admin-student-name">学生姓名</label>
+                  <div className="input-wrap">
+                    <UserRound aria-hidden="true" />
+                    <input id="admin-student-name" value={draft.fullName} onChange={(event) => setDraft((current) => current ? { ...current, fullName: event.target.value } : current)} required />
+                  </div>
+                </div>
+
+                <div className="role-field">
+                  <div className="role-field-head">
+                    <span className="field-label">工作人员职能</span>
+                    <span>{draft.roles.length ? `已选 ${draft.roles.length}` : '至少 1 项'}</span>
+                  </div>
+                  <div className="role-chip-grid">
+                    {roleOptions.map((role) => (
+                      <button className={draft.roles.includes(role) ? 'role-chip selected' : 'role-chip'} type="button" key={role} onClick={() => toggleDraftRole(role)}>
+                        {role}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <label className="field-label" htmlFor="admin-reflection-note">课程总结</label>
+              <textarea id="admin-reflection-note" value={draft.textSummary} onChange={(event) => setDraft((current) => current ? { ...current, textSummary: event.target.value } : current)} rows={4} required />
+
+              <label className="field-label" htmlFor="admin-video-url">视频总结链接</label>
+              <input id="admin-video-url" className="url-field" type="url" value={draft.videoSummaryUrl} onChange={(event) => setDraft((current) => current ? { ...current, videoSummaryUrl: event.target.value } : current)} required />
+
+              <div className="subsection-heading">
+                <span>作品信息</span>
+                <small>最多两组</small>
+              </div>
+              <div className="work-upload-grid">
+                {draft.works.map((work, index) => (
+                  <div className="work-upload-card admin-work-card" key={index}>
+                    <label className="field-label" htmlFor={`admin-work-url-${index}`}>作品链接 {index + 1}</label>
+                    <input
+                      id={`admin-work-url-${index}`}
+                      className="url-field"
+                      type="url"
+                      value={work.workUrl}
+                      onChange={(event) =>
+                        setDraft((current) =>
+                          current
+                            ? {
+                                ...current,
+                                works: current.works.map((currentWork, workIndex) =>
+                                  workIndex === index ? { ...currentWork, workUrl: event.target.value } : currentWork,
+                                ),
+                              }
+                            : current,
+                        )
+                      }
+                    />
+                    <label className="field-label" htmlFor={`admin-cover-url-${index}`}>封面链接 {index + 1}</label>
+                    <input
+                      id={`admin-cover-url-${index}`}
+                      className="url-field"
+                      type="url"
+                      value={work.coverUrl}
+                      onChange={(event) =>
+                        setDraft((current) =>
+                          current
+                            ? {
+                                ...current,
+                                works: current.works.map((currentWork, workIndex) =>
+                                  workIndex === index ? { ...currentWork, coverUrl: event.target.value } : currentWork,
+                                ),
+                              }
+                            : current,
+                        )
+                      }
+                    />
+                  </div>
+                ))}
+              </div>
+
+              {message && <p className={`form-message ${message.includes('失败') || message.includes('必须') || message.includes('需要') ? 'is-error' : ''}`}>{message}</p>}
+              <div className="admin-edit-actions">
+                <button className="primary-action" type="submit" disabled={isSaving}>
+                  {isSaving ? <Loader2 className="spin" /> : <Save />}
+                  保存修改
+                </button>
+                <button className="ghost-action danger-action" type="button" onClick={() => void handleDelete()} disabled={isSaving}>
+                  <Trash2 />
+                  删除内容
+                </button>
+              </div>
+            </>
+          ) : (
+            <p className="empty-state">请选择一条提交记录。</p>
+          )}
+        </form>
+      </div>
+    </section>
   );
 }
 
