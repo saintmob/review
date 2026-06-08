@@ -13,6 +13,8 @@
 
 `/admin` 是管理员内容页，登录后可编辑或删除学生提交内容。管理员密码不写入源码，由 Cloudflare D1 保存哈希。
 
+`/architecture` 是项目架构与演职员表页面，会结合当前提交数据和 VAD 现场总控文档，说明多模块项目的组成、端口、职责、屏幕路由和团队分工。
+
 默认活动后端：
 
 ```text
@@ -43,6 +45,8 @@ https://review-api.saintmob.workers.dev
 学生上传页：http://localhost:3000/upload
 
 管理员内容页：http://localhost:3000/admin
+
+架构说明页：http://localhost:3000/architecture
 
 ## 前端行为
 

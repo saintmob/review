@@ -1,4 +1,4 @@
-import { applyCors, badRequest, json, methodNotAllowed, noContent, notFound, text } from './http.js';
+import { applyCors, badRequest, isAllowedWriteOrigin, json, methodNotAllowed, noContent, notFound, text } from './http.js';
 import { createStudent, createUploadRecord, deleteStudent, getBootstrapData, getProgram, listStudents, listSummaries, listWorks, updateStudent } from './db.js';
 import { buildMediaUrl, getMediaObject, isRenderableMedia, makeMediaKey, parseRangeHeader, putMedia } from './r2.js';
 import { createAdminSession, requireAdminSession, revokeAdminSession, verifyAdminPassword } from './auth.js';
@@ -130,6 +130,10 @@ function validateAdminStudentPayload(request, payload) {
 }
 
 async function handleUpload(request, env) {
+  if (!isAllowedWriteOrigin(request)) {
+    return json(request, { error: '提交来源不被允许' }, { status: 403 });
+  }
+
   const formData = await request.formData();
   const file = getUploadFile(formData);
   if (!file) {
@@ -253,6 +257,10 @@ async function handleBootstrap(request, env) {
 }
 
 async function handleCreateStudent(request, env) {
+  if (!isAllowedWriteOrigin(request)) {
+    return json(request, { error: '提交来源不被允许' }, { status: 403 });
+  }
+
   const body = await parseJsonBody(request);
   if (!body) {
     return badRequest(request, '请求体必须是 JSON');
@@ -291,6 +299,10 @@ async function handleCreateStudent(request, env) {
 }
 
 async function handleAdminLogin(request, env) {
+  if (!isAllowedWriteOrigin(request)) {
+    return json(request, { error: '管理来源不被允许' }, { status: 403 });
+  }
+
   const body = await parseJsonBody(request);
   if (!body) {
     return badRequest(request, '请求体必须是 JSON');
@@ -318,6 +330,10 @@ async function requireAdmin(request, env) {
 }
 
 async function handleAdminStudents(request, env) {
+  if (!isAllowedWriteOrigin(request)) {
+    return json(request, { error: '管理来源不被允许' }, { status: 403 });
+  }
+
   const session = await requireAdmin(request, env);
   if (!session) {
     return json(request, { error: '需要管理员登录' }, { status: 401 });
@@ -332,6 +348,10 @@ async function handleAdminStudents(request, env) {
 }
 
 async function handleAdminUpdateStudent(request, env, studentId) {
+  if (!isAllowedWriteOrigin(request)) {
+    return json(request, { error: '管理来源不被允许' }, { status: 403 });
+  }
+
   const session = await requireAdmin(request, env);
   if (!session) {
     return json(request, { error: '需要管理员登录' }, { status: 401 });
@@ -360,6 +380,10 @@ async function handleAdminUpdateStudent(request, env, studentId) {
 }
 
 async function handleAdminDeleteStudent(request, env, studentId) {
+  if (!isAllowedWriteOrigin(request)) {
+    return json(request, { error: '管理来源不被允许' }, { status: 403 });
+  }
+
   const session = await requireAdmin(request, env);
   if (!session) {
     return json(request, { error: '需要管理员登录' }, { status: 401 });
@@ -374,6 +398,10 @@ async function handleAdminDeleteStudent(request, env, studentId) {
 }
 
 async function handleAdminSession(request, env) {
+  if (!isAllowedWriteOrigin(request)) {
+    return json(request, { error: '管理来源不被允许' }, { status: 403 });
+  }
+
   const session = await requireAdmin(request, env);
   if (!session) {
     return json(request, { authenticated: false }, { status: 401 });
@@ -387,6 +415,10 @@ async function handleAdminSession(request, env) {
 }
 
 async function handleAdminLogout(request, env) {
+  if (!isAllowedWriteOrigin(request)) {
+    return json(request, { error: '管理来源不被允许' }, { status: 403 });
+  }
+
   await revokeAdminSession(env.DB, request);
   return json(request, { ok: true }, {
     headers: {

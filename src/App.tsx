@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type FormEvent } from 'react';
-import { Camera, CheckCircle2, Circle, Home, LibraryBig, Loader2, LockKeyhole, LogOut, MonitorPlay, Pause, Pencil, Play, RefreshCw, RotateCcw, Save, ShieldCheck, SkipBack, SkipForward, Square, Trash2, UploadCloud, UserRound, Waves } from 'lucide-react';
+import { Camera, CheckCircle2, Circle, Cpu, Home, LibraryBig, Loader2, LockKeyhole, LogOut, MonitorPlay, Music2, Network, Pause, Pencil, Play, RadioTower, RefreshCw, Route, RotateCcw, Save, ShieldCheck, SkipBack, SkipForward, Sparkles, Square, Trash2, UploadCloud, UserRound, UsersRound, Waves } from 'lucide-react';
 
 type Program = {
   text: string;
@@ -630,7 +630,7 @@ async function uploadFileToWorker(input: {
 
 function getUploadErrorMessage(error: unknown) {
   const message = error instanceof Error ? error.message : String(error || '上传失败');
-  if (message.includes('HTTP 413')) return '文件过大，超过活动允许的大小限制。';
+  if (message.includes('HTTP 413')) return '文件过大，超过系统允许的大小限制。';
   return message;
 }
 
@@ -680,23 +680,25 @@ function App() {
   const isAdminPage = pathname === '/admin';
   const isUploadPage = pathname === '/upload';
   const isDisplayPage = pathname === '/display' || pathname === '/videos' || pathname === '/video-carousel';
+  const isArchitecturePage = pathname === '/architecture' || pathname === '/credits';
   const isPublicPage = pathname === '/public';
-  const pageKey = isAdminPage ? 'admin' : isUploadPage ? 'upload' : isDisplayPage ? 'display' : isPublicPage ? 'public' : 'home';
+  const pageKey = isAdminPage ? 'admin' : isUploadPage ? 'upload' : isDisplayPage ? 'display' : isArchitecturePage ? 'architecture' : isPublicPage ? 'public' : 'home';
 
   return (
     <main className={`app page-${pageKey}`}>
       <AmbientStage />
       <AppNav activePage={pageKey} />
-      {isAdminPage ? <AdminPage /> : isUploadPage ? <UploadPage /> : isDisplayPage ? <DisplayPage /> : isPublicPage ? <PlaybackPage /> : <LandingPage />}
+      {isAdminPage ? <AdminPage /> : isUploadPage ? <UploadPage /> : isDisplayPage ? <DisplayPage /> : isArchitecturePage ? <ArchitecturePage /> : isPublicPage ? <PlaybackPage /> : <LandingPage />}
     </main>
   );
 }
 
-function AppNav({ activePage }: { activePage: 'home' | 'display' | 'public' | 'upload' | 'admin' }) {
+function AppNav({ activePage }: { activePage: 'home' | 'display' | 'public' | 'upload' | 'admin' | 'architecture' }) {
   const navItems = [
     { key: 'home', label: '首页', href: '/', icon: Home },
     { key: 'display', label: '现场', href: '/display', icon: MonitorPlay },
     { key: 'public', label: '全部', href: '/public', icon: LibraryBig },
+    { key: 'architecture', label: '架构', href: '/architecture', icon: Network },
     { key: 'upload', label: '提交', href: '/upload', icon: UploadCloud },
   ] as const;
 
@@ -746,6 +748,257 @@ function LandingPage() {
         </div>
         <p className="terminal-line"><i /> 先提交，再展示。</p>
       </div>
+    </section>
+  );
+}
+
+function countRoles(students: StudentRecord[]) {
+  const counts = new Map<string, number>();
+  for (const student of students) {
+    for (const role of student.roles) {
+      counts.set(role, (counts.get(role) || 0) + 1);
+    }
+  }
+
+  return roleOptions.map((role) => ({ role, count: counts.get(role) || 0 })).filter((item) => item.count > 0);
+}
+
+function getModuleCrew(students: StudentRecord[], roles: string[]) {
+  const roleSet = new Set(roles);
+  return students
+    .filter((student) => student.roles.some((role) => roleSet.has(role)))
+    .map((student) => student.fullName)
+    .filter(Boolean)
+    .slice(0, 10);
+}
+
+function groupStudentsByRole(students: StudentRecord[]) {
+  return roleOptions
+    .map((role) => ({
+      role,
+      students: students.filter((student) => student.roles.includes(role)).map((student) => student.fullName).filter(Boolean),
+    }))
+    .filter((group) => group.students.length);
+}
+
+function formatCrewNames(names: string[], limit = 8) {
+  const visible = names.slice(0, limit);
+  const hiddenCount = Math.max(0, names.length - visible.length);
+  return hiddenCount ? `${visible.join(' / ')} / +${hiddenCount}` : visible.join(' / ');
+}
+
+function ArchitecturePage() {
+  const { data, isLoading, message, load } = usePublicEventData();
+  const roleCounts = useMemo(() => countRoles(data.students), [data.students]);
+  const roleGroups = useMemo(() => groupStudentsByRole(data.students), [data.students]);
+  const systemModules = useMemo(
+    () => [
+      {
+        port: '4300',
+        name: '总控 API',
+        repo: 'vad.26.api',
+        icon: RadioTower,
+        roles: ['导演', '场务', '技术支持', '指导老师'],
+        description: '保存全局状态，承接 Dashboard 控制，把音频、视觉、多屏路由调度到同一条现场时间线上。',
+        signals: ['Dashboard', 'WebSocket', '屏幕路由', '全局状态'],
+      },
+      {
+        port: '4301',
+        name: 'DJ / 音频',
+        repo: 'mixer-target-123',
+        icon: Music2,
+        roles: ['音乐'],
+        description: '播放与混音，向总控持续发布实时音频特征，为视觉和多屏交互提供节奏脉冲。',
+        signals: ['混音播放', '音频特征', '节奏驱动'],
+      },
+      {
+        port: '4302',
+        name: 'VJ 视觉',
+        repo: 'visual-dynamic-effect',
+        icon: Sparkles,
+        roles: ['视觉', '字幕旁白'],
+        description: '承载 VJ 控制台和屏幕输出，接收场景、文字、音频驱动与全屏控制。',
+        signals: ['Dumbar', 'Topology', 'Liquid', 'Chromaflux', 'Cyber'],
+      },
+      {
+        port: '4303',
+        name: '多屏特效',
+        repo: 'baofa',
+        icon: Route,
+        roles: ['交互', '技术支持'],
+        description: '负责原生多屏特效、树形生长、烟花模式与每块屏幕的交互呈现。',
+        signals: ['Tree', 'Firework', 'Pulse', 'Reset tree'],
+      },
+      {
+        port: '公网',
+        name: '回响提交与归档',
+        repo: 'review',
+        icon: UsersRound,
+        roles: roleOptions,
+        description: '收集学生总结、视频与作品封面，把课程参与者的分工映射成公开展示和管理后台。',
+        signals: ['学生提交', 'D1 / R2', '公开播放', '内容管理'],
+      },
+    ],
+    [],
+  );
+
+  const screenGroups = [
+    { name: 'A', ids: ['A1'] },
+    { name: 'B', ids: ['B1', 'B2', 'B3', 'B4', 'B5', 'B6'] },
+    { name: 'C', ids: ['C1', 'C2', 'C3', 'C4'] },
+    { name: 'D', ids: ['D1', 'D2', 'D3'] },
+    { name: '翼', ids: ['E1', 'F1', 'L1', 'L2', 'R1', 'R2'] },
+  ];
+  const routePresets = [
+    {
+      name: 'Balanced',
+      description: 'A1、L1、L2、R1、R2 交给 VJ，其余屏幕交给 baofa，让主视觉与多屏特效同时在场。',
+    },
+    {
+      name: 'VJ Takeover',
+      description: '所有屏幕切到 VJ，用统一视觉场景接管现场。',
+    },
+    {
+      name: 'Baofa Takeover',
+      description: '所有屏幕切到 baofa，用树、烟花、脉冲和互动状态接管现场。',
+    },
+  ];
+
+  return (
+    <section className="architecture-page page-fade">
+      <div className="architecture-hero">
+        <div>
+          <p className="eyebrow">架构</p>
+          <h1 className="architecture-title">演职员表，也是系统图</h1>
+          <p className="subtitle">
+            这套项目由现场总控、DJ、VJ、多屏交互和提交归档共同组成。每个模块都有自己的端口、职责和参与者，观众看到的是一场演出，后台跑着一支临时剧组。
+          </p>
+        </div>
+        <div className="architecture-live-card">
+          <span>线上数据</span>
+          <strong>{data.students.length || '—'}</strong>
+          <p>位参与者 / {data.works.length || '—'} 组作品 / {data.summaries.length || '—'} 条视频总结</p>
+          <button className="ghost-action" type="button" onClick={() => void load()} disabled={isLoading}>
+            {isLoading ? <Loader2 className="spin" /> : <RefreshCw />}
+            刷新
+          </button>
+        </div>
+      </div>
+
+      <div className="architecture-flow" aria-label="模块流向">
+        <div className="architecture-node main-node">
+          <Cpu />
+          <strong>4300 总控</strong>
+          <span>状态 / 命令 / 路由</span>
+        </div>
+        <div className="architecture-lanes">
+          <span>4301 DJ 音频特征</span>
+          <span>4302 VJ 场景输出</span>
+          <span>4303 baofa 多屏特效</span>
+          <span>review 提交归档</span>
+        </div>
+      </div>
+
+      <div className="architecture-grid">
+        {systemModules.map(({ port, name, repo, icon: Icon, roles, description, signals }) => {
+          const crew = getModuleCrew(data.students, roles);
+          return (
+            <article className="architecture-module" key={repo}>
+              <div className="architecture-module-head">
+                <span>{port}</span>
+                <Icon />
+              </div>
+              <h2>{name}</h2>
+              <p>{description}</p>
+              <div className="architecture-tags">
+                {signals.map((signal) => <span key={signal}>{signal}</span>)}
+              </div>
+              <div className="architecture-crew">
+                <strong>{repo}</strong>
+                <p>{crew.length ? crew.join(' / ') : '现场支持与系统协作'}</p>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+
+      <div className="architecture-panels">
+        <section className="architecture-panel">
+          <div className="section-heading archive-heading">
+            <div>
+              <p className="eyebrow">团队分工</p>
+              <h2>从提交数据生成的参与结构</h2>
+            </div>
+          </div>
+          <div className="role-count-grid">
+            {roleCounts.length ? roleCounts.map((item) => (
+              <div className="role-count-item" key={item.role}>
+                <span>{item.role}</span>
+                <strong>{item.count}</strong>
+              </div>
+            )) : <p className="empty-state">正在读取团队分工...</p>}
+          </div>
+        </section>
+
+        <section className="architecture-panel">
+          <div className="section-heading archive-heading">
+            <div>
+              <p className="eyebrow">屏幕路由</p>
+              <h2>20 块屏幕的现场入口</h2>
+            </div>
+          </div>
+          <div className="screen-map-grid">
+            {screenGroups.map((group) => (
+              <div className="screen-group" key={group.name}>
+                <strong>{group.name}</strong>
+                <div>
+                  {group.ids.map((id) => <span key={id}>{id}</span>)}
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="meta-line">屏幕只需打开 4300 的统一入口，由总控根据 owner 自动跳转到 VJ、baofa 或诊断状态。</p>
+        </section>
+      </div>
+
+      <div className="architecture-panels">
+        <section className="architecture-panel">
+          <div className="section-heading archive-heading">
+            <div>
+              <p className="eyebrow">演职员表</p>
+              <h2>按模块职能展开</h2>
+            </div>
+          </div>
+          <div className="credit-role-list">
+            {roleGroups.length ? roleGroups.map((group) => (
+              <div className="credit-role-item" key={group.role}>
+                <strong>{group.role}</strong>
+                <p>{formatCrewNames(group.students, 10)}</p>
+              </div>
+            )) : <p className="empty-state">正在读取团队名单...</p>}
+          </div>
+        </section>
+
+        <section className="architecture-panel">
+          <div className="section-heading archive-heading">
+            <div>
+              <p className="eyebrow">调度方式</p>
+              <h2>现场如何切换所有屏幕</h2>
+            </div>
+          </div>
+          <div className="route-preset-list">
+            {routePresets.map((preset) => (
+              <div className="route-preset-item" key={preset.name}>
+                <strong>{preset.name}</strong>
+                <p>{preset.description}</p>
+              </div>
+            ))}
+          </div>
+          <p className="meta-line">Dashboard 的控制命令进入 4300，再通过 WebSocket 分发给 VJ、baofa 和屏幕网关。</p>
+        </section>
+      </div>
+
+      {message && <p className="form-message">{message}</p>}
     </section>
   );
 }

@@ -15,7 +15,7 @@ export function startScreenRouteReturnBridge(options: { stateUrl?: string; datab
   const screenId = readScreenId();
   if (!screenId) return () => undefined;
 
-  const env = import.meta.env || {};
+  const env = import.meta.env;
   const showId = options.showId ||
     readQueryValue('room') ||
     readQueryValue('showId') ||
