@@ -1786,7 +1786,6 @@ textarea:focus {
 
 .architecture-hero {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.34fr);
   gap: clamp(16px, 3vw, 28px);
   align-items: end;
 }
@@ -1837,11 +1836,24 @@ textarea:focus {
 }
 
 .architecture-live-card p,
-.architecture-module p,
-.architecture-crew p {
+.architecture-module p {
   margin: 0;
   color: rgba(226, 247, 255, 0.68);
   line-height: 1.62;
+}
+
+.architecture-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.36fr) minmax(0, 0.64fr);
+  gap: clamp(14px, 2.5vw, 22px);
+  align-items: start;
+}
+
+.architecture-team-column,
+.architecture-system-column {
+  display: grid;
+  min-width: 0;
+  gap: 14px;
 }
 
 .architecture-flow {
@@ -1899,7 +1911,7 @@ textarea:focus {
 
 .architecture-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
 }
 
@@ -1923,10 +1935,16 @@ textarea:focus {
   color: rgba(118, 238, 255, 0.78);
 }
 
-.architecture-module h2 {
+.architecture-module h3 {
   margin: 0;
   color: #f7fcff;
   font-size: clamp(1.2rem, 2.4vw, 1.55rem);
+}
+
+.module-repo {
+  color: rgba(126, 249, 255, 0.84);
+  font-size: 0.78rem;
+  font-weight: 600;
 }
 
 .architecture-tags {
@@ -1944,53 +1962,8 @@ textarea:focus {
   font-size: 0.7rem;
 }
 
-.architecture-crew {
-  display: grid;
-  gap: 6px;
-  border-top: 1px solid rgba(118, 238, 255, 0.12);
-  padding-top: 12px;
-}
-
-.architecture-crew strong {
-  color: #8ef7ff;
-  font-size: 0.82rem;
-}
-
-.architecture-panels {
-  display: grid;
-  grid-template-columns: minmax(0, 0.48fr) minmax(0, 0.52fr);
-  gap: 14px;
-}
-
 .architecture-panel {
   padding: clamp(16px, 2.4vw, 22px);
-}
-
-.role-count-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.role-count-item {
-  display: flex;
-  min-height: 72px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  border: 1px solid rgba(118, 238, 255, 0.14);
-  padding: 12px;
-  background: rgba(3, 8, 18, 0.4);
-}
-
-.role-count-item span {
-  color: rgba(226, 247, 255, 0.76);
-  font-size: 0.82rem;
-}
-
-.role-count-item strong {
-  color: #f7fcff;
-  font-size: 2rem;
 }
 
 .screen-map-grid {
@@ -2039,6 +2012,24 @@ textarea:focus {
 .route-preset-item strong {
   color: #f7fcff;
   font-size: 0.92rem;
+}
+
+.credit-role-item strong {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.credit-role-item strong span {
+  display: inline-grid;
+  min-width: 28px;
+  min-height: 24px;
+  place-items: center;
+  border: 1px solid rgba(118, 238, 255, 0.18);
+  color: rgba(126, 249, 255, 0.84);
+  background: rgba(39, 255, 213, 0.08);
+  font-size: 0.72rem;
 }
 
 .credit-role-item p,
@@ -2534,8 +2525,8 @@ audio {
   .hero-grid,
   .upload-page,
   .architecture-hero,
+  .architecture-layout,
   .architecture-flow,
-  .architecture-panels,
   .featured-player {
     grid-template-columns: 1fr;
   }
@@ -2544,8 +2535,7 @@ audio {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .architecture-lanes,
-  .role-count-grid {
+  .architecture-lanes {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -2705,8 +2695,7 @@ audio {
   }
 
   .architecture-grid,
-  .architecture-lanes,
-  .role-count-grid {
+  .architecture-lanes {
     grid-template-columns: 1fr;
   }
 
